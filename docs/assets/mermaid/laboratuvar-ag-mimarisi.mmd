@@ -1,0 +1,9 @@
+flowchart TD
+  F["OPNsense: ağ geçidi, filtreleme, Suricata"]
+  U["USERS VLAN / WIN01"] --> F
+  D["SERVERS VLAN / DC01"] --> F
+  K["KALI VLAN / kontrollü test makinesi"] --> F
+  F --> C["Collector / Syslog"]
+  C --> S["SOC FastAPI / Dashboard"]
+  U -. "Sysmon olayları" .-> S
+  D -. "AD olayları" .-> S

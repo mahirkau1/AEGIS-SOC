@@ -1,0 +1,11 @@
+flowchart TD
+  X["SecurityEvent isteği"] --> TK{"SOC_INGEST_TOKEN dolu mu?"}
+  TK -->|Evet| CH{"X-SOC-Token eşleşiyor mu?"}
+  CH -->|Hayır| ERR["401"]
+  CH -->|Evet| N["Kaynak/seviye normalizasyonu"]
+  TK -->|Hayır| N
+  N --> PA["normalize(item)"]
+  PA --> DB["storage.insert(item)"]
+  DB --> D{"Kayıt yeni mi?"}
+  D -->|Evet| OK["status: accepted"]
+  D -->|Hayır| DUP["status: duplicate"]

@@ -1,0 +1,19 @@
+flowchart LR
+  subgraph Kaynaklar["Telemetri kaynakları"]
+    O["OPNsense Firewall"]
+    S["Suricata IDS"]
+    A["Active Directory Security"]
+    W["Windows Sysmon"]
+  end
+  O --> COL["Syslog / collector"]
+  S --> COL
+  COL --> ING["FastAPI: /api/events/ingest"]
+  A -. "aktarım yöntemi tam incelenmedi" .-> ING
+  W -. "aktarım yöntemi tam incelenmedi" .-> ING
+  ING --> P["app.parser.normalize"]
+  P --> ST["app.storage.insert"]
+  ST --> DB[("Olay deposu: SQLite olarak raporlandı")]
+  DB --> R["API sorguları"]
+  R --> UI["Dashboard"]
+  R --> IN["app.incident_engine.build_incidents"]
+  IN -. "opsiyonel ek yorum" .-> LLM["Local Ollama"]

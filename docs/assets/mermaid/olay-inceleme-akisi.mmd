@@ -1,0 +1,9 @@
+flowchart LR
+  EVT["Olaylar"] --> CR["build_incidents: korelasyon örneği"]
+  CR --> CH["Analist vaka seçer"]
+  CH --> EV["Kayıtlar ve kanıtlı temel rapor"]
+  EV --> OPT{"SOC_AI_EXTRA=1?"}
+  OPT -->|Hayır| REP["Temel rapor"]
+  OPT -->|Evet| O["Ollama ek yorum denemesi"]
+  O --> REP
+  REP --> HUM["Analist karar / doğrulama"]

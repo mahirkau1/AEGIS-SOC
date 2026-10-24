@@ -1,0 +1,7 @@
+flowchart LR
+  N["Normalleştirilmiş olaylar"] --> F{"Suricata / Firewall sinyali"}
+  F --> G["build_incidents()"]
+  G --> EV["İmza, port, eylem, kaynak/hedef kanıtları"]
+  EV --> RS["Başlangıç risk sınıfı"]
+  RS --> O["Vaka özeti"]
+  N -. "V2 entegrasyon kontrolü gerekli" .-> M["MITRE analizi"]
