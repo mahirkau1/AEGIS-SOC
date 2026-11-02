@@ -32,7 +32,7 @@ Bu depoda **[LAB]** gerçek laboratuvar kurulumu, ekran görüntüsü veya test 
 
 Aşağıdaki VirtualBox ekran görüntüleri gerçekten kullanılan makine ağ ayarlarını gösterir:
 
-| OPNsense | DC01 | WIN01 | Kali |
+| DC01 | OPNsense | WIN01 | Kali |
 |---|---|---|---|
 | ![OPNsense VM](docs/screenshots/virtualbox-dc01-network.png) | ![DC01 VM](docs/screenshots/virtualbox-opnsense-network.png) | ![WIN01 VM](docs/screenshots/virtualbox-win01-network.png) | ![Kali VM](docs/screenshots/virtualbox-kali-network.png) |
 
