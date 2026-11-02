@@ -30,6 +30,7 @@ Bu projede iki ayrı sorumluluk var: **OPNsense trafiği izin/verme veya engelle
 10. [Dashboard ekranları](#10-dashboard-ekranları)
 11. [Çalıştırma ve doğrulama](#11-çalıştırma-ve-doğrulama)
 12. [Güvenlik, kapsam ve sonuç](#12-güvenlik-kapsam-ve-sonuç)
+13. [Kaynak kodu ve GitHub düzeni](#13-kaynak-kodu-ve-github-düzeni)
 
 ---
 
@@ -452,10 +453,11 @@ Bir kullanıcı olayı değerlendirirken yalnızca **kim oturum açtı?** sorusu
 
 ### 11.1. AEGIS API
 
-[LAB] Laboratuvarda API, Windows ana makinede `192.168.1.111:8088` üzerinde çalıştırıldı. Aşağıdaki örnek komutlar, **çalışan kodun bulunduğu yerel depo kökünde** ve kurulu Python ortamında kullanılmak üzere gösterilmiştir. Bir GitHub dokümantasyon paketi, otomatik olarak çalışan collector servislerini de yüklemez.
+[LAB] Laboratuvarda API, Windows ana makinede `192.168.1.111:8088` üzerinde çalıştırıldı. Aşağıdaki örnek komutlar, **`project/` klasörünün içinde** ve kurulu Python ortamında kullanılmak üzere gösterilmiştir. Bir GitHub dokümantasyon paketi, otomatik olarak çalışan collector servislerini de yüklemez.
 
 ```powershell
-# Proje kökünde, örnek başlangıç
+# GitHub klonunun kökünden proje koduna geç
+Set-Location project
 py -3.14 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
@@ -516,3 +518,62 @@ Invoke-RestMethod "$base/api/events?mode=all&source=SYSMON&limit=25"
 Bu çalışmayla **VirtualBox ağ kurulumu → OPNsense segmentasyonu ve firewall politikaları → Active Directory → Kali ve Windows collector'ları → Sysmon/Suricata/Windows Security kayıtları → AEGIS analiz motorları → web dashboard** zincirini tek laboratuvarda bir araya getirdim. Projenin odağında çok sayıda alarm üretmek değil, **hangi olayın hangi kaynaktan geldiğini ve nasıl yorumlandığını göstermek** var.
 
 **AEGIS SOC — Active Directory, ağ güvenliği ve uç nokta telemetrisini bir arada inceleyen, tamamlanmış laboratuvar uygulaması.**
+
+
+## 13. Kaynak kodu ve GitHub düzeni
+
+Bu repoda proje sunumunu kolaylaştırmak için **tek Türkçe README**, kullanılan ekran görüntülerini barındıran **`images/`**, çalıştırılabilir kaynak kodu ve testleri bir arada tutan **`project/`** bulunur. Eski yedek sürümler, tarayıcı önbellekleri, çalışma logları ve sanal Python ortamı yayımlanmaz.
+
+```text
+AEGIS-SOC/
+├── README.md
+├── images/                       # 39 laboratuvar ekran görüntüsü
+├── project/
+│   ├── app/
+│   │   ├── main.py               # FastAPI API uçları ve uygulama bağlantıları
+│   │   ├── parser.py             # Olay normalizasyonu
+│   │   ├── storage.py            # SQLite, tekilleştirme ve saklama
+│   │   ├── network_detection.py  # Ağ tespitleri
+│   │   ├── incident_engine.py    # Ağ olay korelasyonu
+│   │   ├── ad_intelligence.py    # AD kayıt analizi
+│   │   ├── identity_*.py         # Kimlik, yetki ve User 360 bileşenleri
+│   │   ├── sysmon_*.py           # Sysmon tespitleri ve süreç ilişkileri
+│   │   ├── aegis_mitre/          # MITRE eşleştirmeleri ve analiz motoru
+│   │   └── templates/
+│   │       └── index.html        # SOC web arayüzü
+│   ├── tests/                    # Kimlik ve Sysmon birim testleri
+│   └── requirements.txt          # Python paketleri
+└── .gitignore                    # Yedek, sır ve çalışma verisi koruması
+```
+
+### Kaynak kodu nasıl çalışır?
+
+**[KOD]** `project/app/main.py`, FastAPI uygulamasının giriş noktasıdır. `/api/events/ingest` collector'ların gönderdiği kayıtları alır; `parser.py` kaydı ayrıştırır, `storage.py` SQLite deposuna ekler. Ağ, AD, Sysmon, MITRE ve Identity modülleri olayları kendi kurallarına göre analiz eder. Arayüz `templates/index.html` üzerinden sunulur.
+
+**[KOD]** Üretim kimlik bilgileri veya gerçek servis tokenları kod içine yazılmamıştır; `SOC_INGEST_TOKEN`, `SOC_DASHBOARD_USER` ve `SOC_DASHBOARD_PASSWORD` gibi ayarlar çalışma anında ortam değişkeni olarak alınır. **Bu değişkenler yapılandırılmadığında dashboard kimlik doğrulaması ve ingest token denetimi zorunlu değildir.** Bu nedenle projeyi internete doğrudan açmak uygun değildir.
+
+**[LAB]** Kali'de çalışan `/opt/ad-opnsense-soc/collector.py` ve Windows tarafındaki yerel collector görevleri sistemlerde ayrı tutuldu. Kullanıcının yüklediği bu proje arşivinde söz konusu collector kaynaklarının tamamı bulunmadığı için **varmış gibi sahte dosyalar eklenmedi**. İlgili veri akışı bu README'de belgelenmiştir.
+
+### Statik kontrol ve test sonucu
+
+Yayıma hazırlanan kaynaklar kod çalıştırılmadan hassas bilgi kalıpları, beklenmeyen dış ağ uçları ve eski yedek kopyalar açısından kontrol edildi. Yayıma alınan kod snapshot'ında gömülü gerçek API anahtarı veya özel anahtar tespit edilmedi. Bu, tüm olası güvenlik açıklarının bulunmuş olduğu anlamına gelmez; kodun canlı internete açık dağıtımı için ayrı güvenlik incelemesi gerekir.
+
+Birim testlerinde, sağlanan kod snapshot'ından **42 Identity/Sysmon testi ve 21 MITRE testi** ayrı ayrı başarıyla sonuçlandı. Bu kontroller sanal makinelerdeki son üretim durumunun uçtan uca test edildiği iddiası değildir.
+
+```powershell
+# GitHub kökünde (Windows + Python 3.14)
+Set-Location project
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# Yerel ortamda kendi güçlü kimlik bilgilerini tanımla.
+# (Değerleri koda, GitHub'a veya ekran görüntülerine ekleme.)
+$env:SOC_DASHBOARD_USER = 'ornek-analist'
+$env:SOC_DASHBOARD_PASSWORD = '<yerel-guclu-parola>'
+$env:SOC_INGEST_TOKEN = '<yerel-rastgele-token>'
+
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8088
+```
+
+> **Güvenlik:** Bir GitHub deposunu temizleyip yeniden yayımlamak, daha önce commit edilmiş bir sırrı Git geçmişinden otomatik olarak silmez. Eski bir parola veya token bir kez paylaşılmışsa iptal edilip yenisi oluşturulmalıdır.
