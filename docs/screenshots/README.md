@@ -1,51 +1,122 @@
-# AEGIS SOC — screenshot index
+# Screenshot inventory
 
-[LAB] These screenshots were selected from the owner's November 2026 lab capture archive. They are **visual evidence of a configured laboratory**, not independently certified proof of a production deployment. They are embedded in the READMEs and deeper guides where relevant.
+This gallery lists **all screenshots included in the documentation bundle**. The goal is to make it clear that the repository contains not just dashboard images, but also the **lab build evidence**: VirtualBox adapters, OPNsense pages, AD structure, Identity screens, SOC views and host/network validation snippets.
 
-## Dashboard and investigation
+## 1. Virtual machine and network build evidence
 
-| Screen | Purpose |
+| File | Description |
 |---|---|
-| ![SOC command center](soc-security-command-center.png) | [LAB] Security Command Center overview |
-| ![Sysmon overview](sysmon-endpoint-overview.png) | [LAB] Endpoint · Sysmon investigation summary |
-| ![Sysmon process detail](sysmon-process-investigation.png) | [LAB] Process relationship / suspicious process evidence |
-| ![Sysmon analysis](sysmon-analysis-detail.png) | [LAB] Rule-level investigation context |
-| ![Identity intelligence](identity-ad-intelligence.png) | [LAB] Identity · AD Intelligence |
-| ![Identity behavior](identity-security-intelligence.png) | [LAB] Identity security investigation and context |
-| ![Identity privilege](identity-privilege-memberships.png) | [LAB] Identity membership / privilege evidence |
-| ![Lab map](network-lab-topology.png) | [LAB] Network laboratory topology |
-| ![All logs](soc-all-logs.png) | [LAB] Centralized log investigation |
+| `virtualbox-opnsense-network.png` | [LAB] VirtualBox network adapter view for the OPNsense VM. |
+| `virtualbox-dc01-network.png` | [LAB] VirtualBox network adapter view for DC01. |
+| `virtualbox-win01-network.png` | [LAB] VirtualBox network adapter view for WIN01. |
+| `virtualbox-kali-network.png` | [LAB] VirtualBox network adapter view for Kali. |
+| `network-lab-topology.png` | [LAB] Lab topology diagram/dashboard view showing main nodes and relationships. |
+| `dc01-ipconfig.png` | [LAB] Windows IP configuration snippet from the domain controller side. |
+| `kali-routing-table.png` | [LAB] Route table / interface validation on Kali. |
 
-## OPNsense and network monitoring
+## 2. OPNsense build and validation
 
-| Screen | Purpose |
+| File | Description |
 |---|---|
-| ![OPNsense overview](opnsense-overview.png) | [LAB] OPNsense status overview |
-| ![Firewall logs](opnsense-firewall-liveview.png) | [LAB] Firewall Live View |
-| ![Firewall detail](opnsense-firewall-log-detail.png) | [LAB] Log detail table |
-| ![Policy](opnsense-rule-config.png) | [LAB] Configuration / rule context |
-| ![Unbound](opnsense-unbound-monitoring.png) | [LAB] DNS/Unbound view |
-| ![Network analysis](soc-network-detail.png) | [LAB] SOC network analysis details |
-| ![Network evidence](soc-network-logs.png) | [LAB] SOC network event list |
-| ![OPNsense overall](opnsense-dashboard-final.png) | [LAB] Another OPNsense overview capture |
+| `opnsense-interface-assignments.png` | [LAB] Interface assignment/navigation view. |
+| `opnsense-services-status.png` | [LAB] Service/status view used during firewall/DNS build validation. |
+| `opnsense-overview.png` | [LAB] OPNsense overview page with system summary. |
+| `opnsense-rule-config.png` | [LAB] Firewall rule configuration page. |
+| `opnsense-firewall-liveview.png` | [LAB] Live firewall log view. |
+| `opnsense-firewall-log-detail.png` | [LAB] Detailed firewall log entry view. |
+| `opnsense-unbound-monitoring.png` | [LAB] Unbound monitoring/statistics page. |
+| `opnsense-unbound-details.png` | [LAB] Additional Unbound/blocklist detail page. |
+| `opnsense-dashboard-final.png` | [LAB] Final OPNsense dashboard / landing view. |
 
-## Active Directory and VM arrangement
+## 3. Active Directory structure
 
-| Screen | Purpose |
+| File | Description |
 |---|---|
-| ![OU](ad-ou-structure.png) | [LAB] CORP-Users departmental OU tree |
-| ![Finance](ad-finance-ou.png) | [LAB] Finance group context |
-| ![HR](ad-hr-ou.png) | [LAB] HR group context |
-| ![IT](ad-it-ou.png) | [LAB] IT group context |
-| ![Management](ad-management-ou.png) | [LAB] Management group context |
-| ![Sales](ad-sales-ou.png) | [LAB] Sales group context |
-| ![WIN01 network](virtualbox-win01-network.png) | [LAB] WIN01 virtual NIC configuration |
-| ![OPNsense network](virtualbox-opnsense-network.png) | [LAB] OPNsense virtual NIC configuration |
-| ![DC01 network](virtualbox-dc01-network.png) | [LAB] DC01 virtual NIC configuration |
-| ![Kali network](virtualbox-kali-network.png) | [LAB] Kali virtual NIC configuration |
+| `ad-ou-structure.png` | [LAB] Top-level OU / group structure snapshot. |
+| `ad-finance-ou.png` | [LAB] Finance OU and group membership view. |
+| `ad-hr-ou.png` | [LAB] HR OU and group membership view. |
+| `ad-it-ou.png` | [LAB] IT OU and group membership view. |
+| `ad-management-ou.png` | [LAB] Management OU and group membership view. |
+| `ad-sales-ou.png` | [LAB] Sales OU and group membership view. |
 
-## Publication review
+## 4. Identity and privilege analysis
 
-[LAB] Screenshots may show real lab usernames, private addresses, MAC addresses, machine names and dates. Before publication, inspect each file at full size for credentials, tokens, cookies, session IDs, hostnames that identify a real organization, or personally sensitive text. If any appear, redact the **copy for publication** rather than removing source evidence from the private lab. Never publish raw Windows event XML or full OPNsense configuration backups without sanitizing them.
+| File | Description |
+|---|---|
+| `identity-ad-intelligence.png` | [KOD]/[LAB] Identity · AD Intelligence main workspace. |
+| `identity-users-list.png` | [KOD]/[LAB] Identity users list. |
+| `identity-security-intelligence.png` | [KOD]/[LAB] Identity security workspace. |
+| `identity-privilege-memberships.png` | [KOD]/[LAB] Verified AD privilege/group membership view. |
+| `identity-user360-profile.png` | [KOD]/[LAB] User360 profile-style view. |
+| `identity-user360-risk-analysis.png` | [KOD]/[LAB] User360 risk-analysis view. |
+| `soc-identity-user360-summary.png` | [KOD]/[LAB] Additional compact user summary card. |
+| `soc-identity-details.png` | [KOD]/[LAB] Detailed identity evidence panel in the SOC. |
 
-<!-- TODO: screenshot final privacy sign-off by repo owner -->
+## 5. Sysmon and endpoint analysis
+
+| File | Description |
+|---|---|
+| `sysmon-endpoint-overview.png` | [KOD]/[LAB] Endpoint · Sysmon landing page. |
+| `sysmon-process-investigation.png` | [KOD]/[LAB] Process investigation view. |
+| `sysmon-analysis-detail.png` | [KOD]/[LAB] Detail / AI-style analysis panel for a selected process event. |
+
+## 6. SOC dashboard views
+
+| File | Description |
+|---|---|
+| `soc-security-command-center.png` | [KOD]/[LAB] Main SOC command center. |
+| `soc-all-logs.png` | [KOD]/[LAB] All Logs page. |
+| `soc-network-detail.png` | [KOD]/[LAB] Network detection detail screen. |
+| `soc-network-logs.png` | [KOD]/[LAB] Network log listing / evidence screen. |
+| `soc-network-detection-summary.png` | [KOD]/[LAB] Supporting network summary table / compact detection evidence view. |
+| `soc-cli-validation-output.png` | [LAB] CLI validation / terminal evidence snippet used during project verification. |
+
+## 7. Quick gallery
+
+### Virtualization and layout
+
+![VirtualBox OPNsense](virtualbox-opnsense-network.png)
+![VirtualBox DC01](virtualbox-dc01-network.png)
+![VirtualBox WIN01](virtualbox-win01-network.png)
+![VirtualBox Kali](virtualbox-kali-network.png)
+
+### OPNsense
+
+![Interfaces](opnsense-interface-assignments.png)
+![Services](opnsense-services-status.png)
+![Overview](opnsense-overview.png)
+![Rules](opnsense-rule-config.png)
+![Firewall live](opnsense-firewall-liveview.png)
+![Firewall detail](opnsense-firewall-log-detail.png)
+![Unbound monitoring](opnsense-unbound-monitoring.png)
+![Unbound details](opnsense-unbound-details.png)
+![OPNsense dashboard](opnsense-dashboard-final.png)
+
+### Active Directory / Identity
+
+![OU structure](ad-ou-structure.png)
+![Finance](ad-finance-ou.png)
+![HR](ad-hr-ou.png)
+![IT](ad-it-ou.png)
+![Management](ad-management-ou.png)
+![Sales](ad-sales-ou.png)
+![AD Intelligence](identity-ad-intelligence.png)
+![Identity users](identity-users-list.png)
+![Identity workspace](identity-security-intelligence.png)
+![Privilege memberships](identity-privilege-memberships.png)
+![User360 profile](identity-user360-profile.png)
+![Risk analysis](identity-user360-risk-analysis.png)
+![Identity summary](soc-identity-user360-summary.png)
+![Identity details](soc-identity-details.png)
+
+### SOC / Sysmon
+
+![Sysmon overview](sysmon-endpoint-overview.png)
+![Sysmon process investigation](sysmon-process-investigation.png)
+![Sysmon detail](sysmon-analysis-detail.png)
+![Command center](soc-security-command-center.png)
+![All logs](soc-all-logs.png)
+![Network detail](soc-network-detail.png)
+![Network logs](soc-network-logs.png)
+![Network summary](soc-network-detection-summary.png)
+![CLI validation](soc-cli-validation-output.png)
