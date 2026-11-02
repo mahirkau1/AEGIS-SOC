@@ -576,4 +576,3 @@ $env:SOC_INGEST_TOKEN = '<yerel-rastgele-token>'
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8088
 ```
 
-> **Güvenlik:** Bir GitHub deposunu temizleyip yeniden yayımlamak, daha önce commit edilmiş bir sırrı Git geçmişinden otomatik olarak silmez. Eski bir parola veya token bir kez paylaşılmışsa iptal edilip yenisi oluşturulmalıdır.
