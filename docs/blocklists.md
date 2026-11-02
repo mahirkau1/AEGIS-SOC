@@ -1,115 +1,108 @@
-# OPNsense IP and DNS blocklists — evidence and limits
+# IP ve DNS kara listeleri — OPNsense engelleme kanıtları
 
-> **Critical distinction:** [LAB] OPNsense enforces traffic policy. [KOD] AEGIS merely reads the resulting logs; it never issues firewall block commands. `[KOD]` = checked in the provided application snapshot; `[LAB]` = lab observation.
+> **En önemli ayrım:** Trafik **OPNsense tarafından engellenir**. AEGIS yalnızca logları okur ve olayların hangi politikaya ait olduğunu incelemeye çalışır. [KOD] Kaynak kodunda doğrulanan, [LAB] laboratuvarda gözlenen veya açıklanan davranışı gösterir.
 
-## 1. IP threat-intelligence policy
+## 1. Bölgelere göre IP engelleme kuralları
 
-[LAB] Separate OPNsense PF rules were created by ingress zone:
+[LAB] OPNsense'te her ağ için ayrı PF kuralı kullanıldı. Kullanıcı, DC01 ve Kali tarafından oluşturulan trafik aynı "genel BLOCK" kuralı üzerinden değerlendirilmedi.
 
-| Network | Observed PF rule label | Enforcement location |
+| Bölge | PF kuralı | Eşleşme alanı |
 |---|---|---|
-| USERS | [LAB] `AEGIS TI - Malicious IP Block` | [LAB] `em2`, USERS ingress |
-| SERVERS/DC01 | [LAB] `AEGIS TI - DC01 Malicious IP Block` | [LAB] `em3`, SERVERS ingress |
-| SECURITY/Kali | [LAB] `AEGIS TI - Kali Malicious IP Block` | [LAB] `em5`, SECURITY ingress |
+| USERS / `em2` | `AEGIS TI - Malicious IP Block` | USERS arayüzünde gelen trafik |
+| SERVERS / `em3` | `AEGIS TI - DC01 Malicious IP Block` | DC01/SERVERS tarafı |
+| SECURITY / `em5` | `AEGIS TI - Kali Malicious IP Block` | Kali/SECURITY tarafı |
 
-[KOD] In the SOC, action `BLOCK` is **not sufficient** to attribute an event to a threat-intelligence alias. A filterlog rule UUID must match a curated set of known TI policy identities. [LAB] The exact UUID strings were not included here; they must be extracted from the deployed firewall and verified in Live View.
+[KOD] `BLOCK` tek başına bir **tehdit istihbaratı listesi** nedeniyle engelleme yapıldığını göstermez. AEGIS, filterlog içinde gelen PF kural UUID bilgisini onaylı kural kayıtlarıyla eşleştirir. Bu eşleşme yoksa olayı yalnızca firewall engeli olarak değerlendirir.
 
-### IP blacklist sequence
-
-```mermaid
-sequenceDiagram
-  participant Kali as Kali 10.10.50.100
-  participant PF as OPNsense PF / em5
-  participant Rule as TI rule UUID register
-  participant FL as filterlog
-  participant SOC as AEGIS SOC
-  Kali->>PF: TCP/443 or ICMP to 198.51.100.77
-  PF->>Rule: Evaluate zone-specific policy
-  Rule-->>PF: Matching deny rule
-  PF-->>Kali: Blocked / no successful session
-  PF->>FL: BLOCK + rule ID + addresses
-  FL->>SOC: collector event via ingest
-  SOC->>SOC: Check rule UUID register
-  SOC-->>SOC: Label as TI block only on match
-```
-
-[LAB] The observed positive example is SECURITY/em5 inbound, `10.10.50.100 → 198.51.100.77`, both TCP and ICMP, with OPNsense `BLOCK` evidence. [KOD] The SOC's UUID check prevents generic routing or policy denials from being counted as threat-intelligence hits. The IP `198.51.100.77` is from RFC 5737 TEST-NET-2 and is **deliberately not a real threat indicator**.
-
-### Additional operator-supplied IP networks
-
-[LAB] In a later lab check the operator identified the following ranges as **configured block targets**. These are policy inputs for local testing, **not claims that any network is malicious**:
-
-```text
-5.252.153.0/24
-14.128.32.0/20
-14.128.48.0/21
-14.152.94.0/24
-19.200.0.0/16
-```
-
-[LAB] DC01 TCP/443 request attempts were proposed for representative IPs in those ranges. A timeout cannot establish PF enforcement; only contemporaneous filterlog entries with rule identity do so. [LAB] The actual alias source, provenance, refresh schedule and route-specific results for those networks are not independently available for this document.
-
-### Reproduce the safe validation
-
-1. **[LAB]** Verify that the test IP alias is present and bound to the intended zone-specific PF rule in **Firewall → Aliases** and **Firewall → Rules**.
-2. **[LAB]** Send one short request to the reserved TEST-NET-2 destination from the authorized Kali segment. Avoid broad or high-rate scans of external hosts.
-3. **[LAB]** Check **Firewall → Log Files → Live View** for `BLOCK`, correct ingress interface, source/destination, protocol and rule identifier.
-4. **[KOD]** In AEGIS, filter source `FIREWALL` and inspect the same evidence rather than relying on an alert card alone.
-
-![Firewall Live View](screenshots/opnsense-firewall-liveview.png)
-
-## 2. DNS blocklist and Unbound
-
-[LAB] Windows workstation DNS queries were routed via DC01 before reaching the resolver. OPNsense Unbound DNS was configured with blocklist capabilities and a verification view at **Reporting → Unbound DNS → Details**. [KOD] The SOC parses DNS query/response fields but **the current collector does not propagate Unbound's definitive blocklist decision field**.
-
-### DNS blacklist sequence
+## 2. IP engelleme — kanıt akışı
 
 ```mermaid
 sequenceDiagram
-  participant WIN as WIN01
-  participant DC as DC01 / AD DNS
-  participant UB as OPNsense Unbound
-  participant BL as Unbound local blocklist
-  participant COL as DNS log collector
-  participant SOC as AEGIS SOC
-  WIN->>DC: DNS query (client)
-  DC->>UB: Forwarded resolution
-  UB->>BL: Check local policy
-  BL-->>UB: Allow or block outcome
-  UB-->>DC: DNS reply (rcode varies)
-  DC-->>WIN: DNS response
-  UB->>COL: Query/reply log
-  COL->>SOC: DNS event without block-decision field
-  Note over SOC: NXDOMAIN can be tracked; confirmed block decision unavailable
+    participant K as Kali (10.10.50.100)
+    participant F as OPNsense PF / em5
+    participant R as İlgili PF kuralı
+    participant L as filterlog
+    participant S as AEGIS SOC
+    K->>F: TCP / ICMP -> 198.51.100.77
+    F->>R: SECURITY kurallarını kontrol et
+    R-->>F: Eşleşen engelleme eylemi
+    F--xK: BLOCK
+    F->>L: Kural kimliği ve trafik kanıtı
+    L->>S: Collector üzerinden olay
+    S->>S: UUID doğrulaması ve sınıflandırma
 ```
 
-[LAB] Because DC01 can forward workstation queries, the Unbound-side requester may appear as `10.10.30.10`, not the original WIN01 client. [KOD] `NXDOMAIN` may arise from typos, nonexistent names or a blacklist configuration; it is therefore monitored separately and **never presented as confirmed blocklist evidence** without an explicit decision record. This is a known limitation, not a hidden feature.
+[LAB] `198.51.100.77`, **RFC 5737 TEST-NET-2** alanından ayrılmış bir belgelendirme adresidir. Testte "zararlı IP" olarak temsil edildi; gerçekte zararlı bir sunucu olduğu iddia edilmez. [KOD] SOC'un verdiği "TI" etiketi ancak engellenen gerçek paket ile onaylı PF kuralı arasındaki ilişki doğrulanınca anlam kazanır.
 
-### DNS checks
-
-```bash
-# Kali, low-volume queries in the authorized lab
-dig @10.10.50.1 example.invalid A +tries=1 +time=2 +noall +comments
-dig @10.10.30.10 corp.local A +tries=1 +time=2 +noall +comments
-```
-
-[LAB] Confirm the resolver's real decision in **Reporting → Unbound DNS → Details**. [KOD] Compare `DNS` source events in `/api/events?mode=all&source=DNS`; the dashboard should distinguish **resolver response / NXDOMAIN** from **confirmed blacklist block**. A working DNS feed may coexist with zero confirmed blocks in the SOC.
-
-![DNS monitoring](screenshots/opnsense-unbound-monitoring.png)
-
-## 3. Rule register and data provenance
-
-| Evidence item | Requirement |
+| Firewall canlı kayıt | Tekil log ayrıntısı |
 |---|---|
-| PF rule UUID | [KOD] Required to attribute TI-labelled BLOCK events accurately. |
-| Alias/feed provenance | [LAB] **<!-- TODO: include exact configured name, authenticated source URL if public, and update interval -->** |
-| Network policy scope | [LAB] Record interface, ingress/egress and selected source/destination. |
-| DNS decision | [KOD] Collector must forward explicit Unbound blocklist outcome to support a verified block counter. |
-| Security audit | [LAB] Do not commit internal passwords, tokens, full config backups or personally identifiable endpoint paths. |
+| ![OPNsense canlı kayıt](screenshots/opnsense-firewall-liveview.png) | ![OPNsense ayrıntı](screenshots/opnsense-firewall-log-detail.png) |
 
-## 4. Known limitations
+**Doğrulama adımları:**
 
-- **[KOD]** A generic firewall `BLOCK` and a TI-specific `BLOCK` are different data classifications.
-- **[KOD]** DNS `NXDOMAIN` and an Unbound policy `BLOCK` are different outcomes; the current SOC collector cannot confirm the latter.
-- **[LAB]** Exact feed names/URLs, aliases, country/region provenance, polling schedules and complete PF UUID register are not present in the supplied reproducible evidence.
-- **[LAB]** IP ranges supplied by an operator are not malicious by definition; the documentation asserts only their status as lab-configured block candidates.
+1. [LAB] OPNsense **Firewall → Log Files → Live View** ekranında `10.10.50.100` ve `198.51.100.77` filtrelerini kullan.
+2. [LAB] Arayüz `SECURITY/em5`, yön ingress, eylem `BLOCK` ve ilgili protokol/portu kontrol et.
+3. [LAB] Kural adını/UUID'sini OPNsense yapılandırmasıyla eşleştir.
+4. [KOD] AEGIS'te aynı kaydı `source=FIREWALL` üzerinden incele; `PASS`, `BLOCK` ve `REJECT` ayrımının korunduğunu doğrula.
+
+```powershell
+# SOC ana makinesinde salt-okunur olay sorgusu
+Invoke-RestMethod 'http://127.0.0.1:8088/api/events?mode=all&source=FIREWALL&limit=100'
+```
+
+## 3. IP blok listeleri ve gerçek test bağlamı
+
+[LAB] Test görüşmelerinde ayrıca aşağıdaki ağ bloklarının OPNsense üzerinde engelli olduğu bildirildi: `5.252.153.0/24`, `14.128.32.0/20`, `14.128.48.0/21`, `14.152.94.0/24`, `19.200.0.0/16`.
+
+Bu ağların "tüm adresleri kötü amaçlıdır" sonucu çıkarılmaz. Burada yalnızca **laboratuvarda engel adayı olarak tanımlandıkları** belgelenir. DC01'den bu blokların içindeki hedef IP'lere yapılan bağlantı denemeleri için güncel firewall logundan `BLOCK` eşleşmesi ayrıca aranmalıdır; komutun çalıştırılması tek başına ağ engelini kanıtlamaz.
+
+<!-- TODO: blokların oluşturulduğu alias/feed kaynağı, kullanım izni ve güncelleme sıklığı -->
+
+## 4. Unbound DNS engelleme ve log görünürlüğü
+
+[LAB] Windows 11 istemcisinin DNS trafiği DC01 üzerinden yönlendirildiği için resolver tarafında kaynak olarak DC01 görünebilir. Unbound DNS'in blok kararı **Reporting → Unbound DNS → Details** bölümünde incelendi.
+
+```mermaid
+sequenceDiagram
+    participant W as WIN01
+    participant D as DC01 DNS
+    participant U as OPNsense Unbound
+    participant B as Unbound blocklist
+    participant C as Kali DNS log okuyucu
+    participant S as AEGIS SOC
+    W->>D: DNS sorgusu
+    D->>U: Yapılandırmaya göre çözümleme / yönlendirme
+    U->>B: Alan adını listeyle karşılaştır
+    B-->>U: Politika sonucu
+    U-->>D: DNS yanıtı / engel davranışı
+    U-->>C: Sorgu kaydı
+    C->>S: DNS olayı
+    Note over C,S: Açık blocklist karar alanı henüz tam taşınmıyor
+```
+
+[LAB] DNS zinciri, sorgunun ilk kimden çıktığı ile Unbound'un hangi IP'yi kaynak olarak gördüğü arasında fark yaratabilir. [KOD] Mevcut collector, Unbound'un kesin kara liste karar alanını SOC'a taşımadığı için Dashboard'da **doğrulanmış DNS blok sayacı** güvenilir biçimde gösterilmiyor. NXDOMAIN artışı bu eksik verinin yerine konmaz.
+
+| Unbound izleme | Unbound ayrıntılar |
+|---|---|
+| ![Unbound izleme](screenshots/opnsense-unbound-monitoring.png) | ![Unbound sorgu ayrıntısı](screenshots/opnsense-unbound-details.png) |
+
+## 5. NXDOMAIN ve blocklist aynı şey değildir
+
+- [KOD] **NXDOMAIN:** Sorgulanan adın DNS çözümlemesinde bulunamadığını gösterir; yazım hatası veya test alan adı da aynı sonucu üretebilir.
+- [KOD] **Doğrulanmış DNS block:** Unbound tarafından açıkça raporlanan liste/politika engeli olmalıdır.
+- [LAB] Laboratuvarda `.invalid` benzeri alan adları ve kısa aralıklı birden çok DNS isteğiyle davranış test edildi.
+- [KOD] SOC bu iki sinyali ayrı ele alacak şekilde tasarlandı; ancak collector'ın nihai block kararını taşıma sınırı korunuyor.
+
+## 6. Kanıt kaydı ve açıklanması gerekenler
+
+| Kanıt | Neden önemli? |
+|---|---|
+| PF kural UUID'si | [KOD] Gerçek TI block ile sıradan BLOCK'u ayırmak için |
+| Trafik kaynağı/hedefi/protokolü | [LAB] Paket hangi ağ sınırında engellendiğini anlamak için |
+| IP alias ve feed kaynağı | [LAB] Blok listesinin nereden geldiğini ve hangi aralıkları kapsadığını açıklamak için |
+| Unbound karar alanı | [KOD] Doğrulanmış DNS block saymak için |
+| Olay zamanı ve alım zamanı | [KOD] Aynı olayı farklı log kaynakları arasında eşleştirmek için |
+
+<!-- TODO: onaylı PF UUID kayıt defterinin gizli bilgiler çıkarılmış sürümü -->
+<!-- TODO: IP/DNS feed URL'leri, sürümleri ve yenileme periyotları -->
+<!-- TODO: Unbound collector'a açık policy decision / blocklist alanı eklenmesi -->

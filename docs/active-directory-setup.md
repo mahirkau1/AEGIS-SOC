@@ -1,61 +1,86 @@
-# Active Directory, Windows Security and Sysmon
+# Active Directory, Windows Security ve Sysmon kurulumu
 
-> This document describes the laboratory's installed directory and the evidence needed to reproduce its security monitoring. `[LAB]` = observed/reported configuration; `[KOD]` = source code evidence. No domain password, token, SID or personal workstation path is published.
+> Bu rehber, **DC01 + WIN01** kurulumunun AEGIS SOC'a nasıl bağlandığını anlatır. **[LAB]** laboratuvar kurulumu/test kanıtı, **[KOD]** uygulama kaynak kodunda doğrulanmış davranıştır. Parola, erişim anahtarı, özel SID veya kişisel dosya yolu yayımlanmaz.
 
-## 1. Domain controller and networking
+## 1. DC01 sanal makinesinin hazırlanması
 
-1. **[LAB]** Install Windows Server 2019 in the SERVERS network, assign the host name `DC01`, IPv4 `10.10.30.10/24`, gateway `10.10.30.1`, and DNS `10.10.30.10`.
-2. **[LAB]** Promote the server as a new Active Directory DS forest `corp.local` with NetBIOS name `CORP`. AD-integrated DNS and Global Catalog were reported enabled.
-3. **[LAB]** Join WIN01 (Windows 11) to `corp.local` from the USERS network. The IP has been seen as `10.10.20.100` and `10.10.20.101` at different times; verify current address rather than assume either is a fixed assignment.
-4. **[LAB]** Maintain separate authorized administrative credentials and directory accounts for the lab. **<!-- TODO: provide non-secret account/group permission table; do not publish passwords. -->**
+[LAB] Active Directory, kullanıcı bilgisayarından ayrı bir ağda çalışsın diye DC01, **SERVERS / `10.10.30.0/24`** bölgesine alındı. Sanal makine Windows Server 2019 üzerinde kuruldu; adı `DC01`, IP adresi `10.10.30.10`, ağ geçidi `10.10.30.1`, DNS adresi `10.10.30.10` olacak şekilde yapılandırıldı.
 
-### Verify domain health (DC01)
+1. Windows Server sanal makinesini oluştur.
+2. Sanal adaptörünü doğru SERVERS ağına bağla.
+3. Ağ ayarlarını doğrula; başka bir VM'nin IP adresini kullanma.
+4. **Active Directory Domain Services (AD DS)** rolünü kur.
+5. Sunucuyu yeni orman için domain controller'a yükselt: `corp.local` / `CORP`.
+6. AD ile ilişkili DNS servisinin çalıştığını ve sunucu hizmetlerinin ayakta olduğunu kontrol et.
+
+![DC01 VirtualBox ağı](screenshots/virtualbox-dc01-network.png)
+
+![DC01 IP kontrolü](screenshots/dc01-ipconfig.png)
 
 ```powershell
-# Non-destructive validation commands
+# DC01 - sadece okuma
 Get-ADDomain | Select-Object DNSRoot,NetBIOSName
 Get-ADDomainController -Identity DC01 | Select-Object HostName,IPv4Address,IsGlobalCatalog
-Get-NetIPAddress -AddressFamily IPv4 | Where-Object IPAddress -eq '10.10.30.10'
 Get-Service NTDS,DNS | Select-Object Name,Status
+Get-NetIPAddress -AddressFamily IPv4 | Where-Object IPAddress -eq '10.10.30.10'
 ```
 
-[LAB] The domain existed and WIN01 domain join had been completed. These commands should return current DC01 state; they do not promote, edit or restart the domain controller.
+**Beklenen sonuç:** `corp.local` domain'i, DC01 kaydı ve AD/DNS servisleri görünür. Bu komutlar rol kurmaz veya mevcut AD yapılandırmasını değiştirmez.
 
-## 2. Organizational units and groups
+## 2. WIN01: Windows istemcisinin domain'e alınması
 
-[LAB] The screenshot evidence shows a `CORP-Users` branch containing `Finance`, `HR`, `IT`, `Management`, and `Sales` categories, with departmental security groups. Earlier lab sessions also referenced `IT Users` / `IT Admins`; the full relationship between older and later OU naming should not be inferred without an AD export.
+[LAB] Windows 11 istemcisi ayrı **USERS / `10.10.20.0/24`** ağına yerleştirildi. WIN01'in DNS sunucusu DC01 olarak ayarlandı ve `corp.local` alanına katılım işlemi tamamlandı. Eski test kayıtlarında `10.10.20.100` ve `.101` görüldüğü için tek ve değişmez bir istemci IP'si iddia edilmez.
 
-![AD OU tree](screenshots/ad-ou-structure.png)
+![WIN01 VirtualBox adaptörü](screenshots/virtualbox-win01-network.png)
 
 ```powershell
-# DC01, AD management tools installed
+# WIN01 - salt-okunur doğrulama
+ipconfig /all
+(Get-CimInstance Win32_ComputerSystem) | Select-Object Name,Domain,PartOfDomain
+Resolve-DnsName corp.local -Server 10.10.30.10
+```
+
+[LAB] Domain'e alınma için DNS ve ağ erişimi gerektiğinden OPNsense'te USERS → SERVERS trafiği ihtiyaca göre ele alındı. Bu durum bütün portların serbest bırakıldığı anlamına gelmez.
+
+## 3. OU ve güvenlik gruplarının oluşturulması
+
+[LAB] AD içinde kurumsal yapıyı temsil eden `CORP-Users` bölümü ve **Finance, HR, IT, Management, Sales** birimleri oluşturuldu. Buna bağlı Finance-Users, HR-Users, IT-Users, Management-Users ve Sales-Users gibi güvenlik grupları ekranlarda görülür. Önceki aşamalarda `IT Users` ve `IT Admins` adlandırmaları da kullanıldı; birebir birleşim ilişkileri export olmadan varsayılmaz.
+
+| Üst OU | Finance | HR |
+|---|---|---|
+| ![OU ağacı](screenshots/ad-ou-structure.png) | ![Finance](screenshots/ad-finance-ou.png) | ![HR](screenshots/ad-hr-ou.png) |
+
+| IT | Management | Sales |
+|---|---|---|
+| ![IT](screenshots/ad-it-ou.png) | ![Management](screenshots/ad-management-ou.png) | ![Sales](screenshots/ad-sales-ou.png) |
+
+```powershell
+# DC01 - mevcut yapıyı döker; değiştirmez
 Get-ADOrganizationalUnit -Filter * |
   Select-Object Name,DistinguishedName | Sort-Object DistinguishedName
 Get-ADGroup -Filter * |
   Select-Object Name,GroupScope,GroupCategory | Sort-Object Name
 ```
 
-[LAB] Exact real membership lists and privileges are intentionally excluded from the public documentation. [KOD] The AEGIS privilege data model uses direct memberships, primary group relationships and group-to-group nesting rather than assuming all AD permissions are direct user memberships.
+[KOD] Identity katmanı sadece doğrudan kullanıcı üyeliğini değil, birincil grup ve grupların kendi içindeki üyelik bağlarını da analiz eder. Gerçek kullanıcı listesi ve yetki matrisi genel depoda yayınlanmaz.
 
-## 3. Auditing Windows Security
+## 4. Windows Security denetim kayıtlarının etkinleştirilmesi
 
-[LAB] Account and group management auditing was enabled through Group Policy in the domain lab. The collector/detection configuration was built around the event IDs below, but this list **does not imply each ID was observed during the same run**.
+[LAB] Kullanıcı ve grup yönetimi denetimleri GPO üzerinden ele alındı; olaylar Windows Security günlüğünde ve SOC tarafında kontrol edildi. Bir olay ID'sinin desteklenmesi, her testte oluştuğu anlamına gelmez.
 
-| Event IDs | Monitoring intent / interpretation |
+| Event ID | İncelenen olay |
 |---|---|
-| 4624 / 4625 | [KOD] Interactive/network logon successes/failures are correlated with user, host and time context. |
-| 4672 | [KOD] Special privileges assigned at logon; investigative context, not an attack alone. |
-| 4719 / 1102 | [KOD] Audit policy change and Security event-log clearing. |
-| 4720 / 4724 / 4726 / 4738 | [KOD] Account creation, reset attempt, deletion and changes. |
-| 4728 / 4729 / 4732 / 4756 | [KOD] Membership changes in privileged or sensitive groups. |
-| 4740 | [KOD] Account lockouts, related hosts and contexts. |
-| 4768 / 4769 / 4771 / 4776 | [KOD] Kerberos tickets, pre-authentication and NTLM credential validation patterns. |
-| 5145 | [LAB] Detailed file-share access / access-denied investigation discussed in the lab; actual SACL/GPO coverage should be checked. |
-
-### Read-only GPO and log verification
+| `4624`, `4625` | Başarılı / başarısız oturum açma |
+| `4672` | Özel yetkilerle açılan oturum |
+| `4719`, `1102` | Denetim ilkesi değişikliği / Security günlüğünün temizlenmesi |
+| `4720`, `4724`, `4726`, `4738` | Kullanıcı açma, parola sıfırlama girişimi, silme ve değiştirme |
+| `4728`, `4729`, `4732`, `4756` | Güvenlik grubu üyeliği ekleme/çıkarma |
+| `4740` | Kullanıcı hesabı kilitlenmesi |
+| `4768`, `4769`, `4771`, `4776` | Kerberos / NTLM kimlik doğrulama olayları |
+| `5145` | Paylaşılan dosyaya ayrıntılı erişim denetimi; gerçek GPO/SACL kapsamı ayrıca kontrol edilmeli |
 
 ```powershell
-# DC01: policies and recent security event inventory
+# DC01 - denetim politikasını ve mevcut olayları okur
 auditpol /get /category:*
 Get-GPO -All | Select-Object DisplayName,GpoStatus
 Get-WinEvent -FilterHashtable @{
@@ -65,18 +90,20 @@ Get-WinEvent -FilterHashtable @{
   Group-Object Id | Select-Object Name,Count
 ```
 
-[LAB] Some tests yielded failed-authentication and account-change events; the original user and computer identities are withheld here. [KOD] Detection names, windows and threshold details are documented in [detections.md](detections.md). For Event 5145, confirm **Audit Detailed File Share** and any required SACL or file audit settings in the actual GPO rather than assuming every denial is recorded.
+[LAB] Daha önce başarısız oturum, grup üyeliği, parola ve hesap değişikliği testleri yapıldı. **5145** için Audit Detailed File Share ve uygun erişim denetimi ilkeleri kontrol edilmelidir. Olay görünmüyorsa GPO etkinliği ve doğru Windows kayıt kanalı incelenmelidir; rastgele güvenlik koruması kapatılmaz.
 
-## 4. Sysmon installation and configuration
+## 5. Sysmon kurulumu ve AEGIS'e gönderimi
 
-1. **[LAB]** Sysmon was installed on DC01 and WIN01; WIN01 uses `C:\Sysmon\sysmon-soc.xml`, and DC01 used a server-specific XML configuration in its own lab setup.
-2. **[LAB]** WIN01 test configuration monitors process creation (ID 1), network connections (ID 3), remote thread (ID 8), process access (ID 10), Startup file creation (ID 11), registry autorun value setting (ID 13), DNS query (ID 22), and process tampering (ID 25). [KOD] Application parsing also recognizes other event data, but enabled collector IDs are deployment-specific.
-3. **[LAB]** Windows collector sends Sysmon data to the SOC ingest endpoint; the last confirmed WIN01 allow-list was `1,3,8,10,11,13,22,25`.
-4. **[LAB]** The Sysmon ID 25 XML section was reported with `onmatch="exclude"`. That is a filter mode, not proof that actual process-tampering data were recorded; verify the complete config before changing it.
+[LAB] Sysmon, DC01 ve WIN01 üzerine kuruldu. WIN01 tarafında yapılandırma dosyası `C:\Sysmon\sysmon-soc.xml` olarak kullanıldı. Başlangıçta ID 1, 3 ve 22 görülürken daha sonra **ID 11/13** Startup dosyası ve Registry Run testleriyle izlemeye alındı; son aşamada ID 8/10/25 filtresi genişletildi.
 
-### Read-only Sysmon checks
+[LAB] WIN01 collector son izinli olay listesi: `1,3,8,10,11,13,22,25`. ID 12, uygulamanın daha geniş Sysmon veri desteğinde geçse de bu son collector filtre listesinde değildir.
+
+| Sysmon görünümü | Süreç incelemesi | Olay ayrıntısı |
+|---|---|---|
+| ![Sysmon ana ekran](screenshots/sysmon-endpoint-overview.png) | ![Süreç inceleme](screenshots/sysmon-process-investigation.png) | ![Olay analizi](screenshots/sysmon-analysis-detail.png) |
 
 ```powershell
+# WIN01 - kurulu Sysmon'u ve collector filtresini okur
 Get-Service Sysmon64 -ErrorAction SilentlyContinue
 Get-WinEvent -ListLog 'Microsoft-Windows-Sysmon/Operational'
 Get-WinEvent -FilterHashtable @{
@@ -84,42 +111,41 @@ Get-WinEvent -FilterHashtable @{
   StartTime=(Get-Date).AddHours(-4)
 } -MaxEvents 100 -ErrorAction SilentlyContinue |
   Group-Object Id | Select-Object Name,Count
-
-# Check the collector's ID filter (without editing it)
 Select-String -Path 'C:\SOC\sysmon_collector.ps1' -SimpleMatch '$Event.Id -notin'
 ```
 
-[LAB] Eight different real lab rules generated WIN01-to-SOC dashboard alerts: encoded/dynamic PowerShell, script-host and Office-named parent process, invalid DNS, Startup file, autorun registry, and unusual outbound port. [LAB] Live ID 8/10/25 malicious-behavior tests were not completed because access to LSASS was denied and a third-party test utility was flagged by Defender; the protection was not disabled.
+[LAB] **Sekiz farklı Sysmon kuralı**, WIN01'de gerçekleştirilen gerçek ama kontrollü testlerle SOC ekranında doğrulandı. Bunlar encoded PowerShell, şüpheli PowerShell ifadesi, script host üzerinden shell, Office adındaki test sürecinden shell, `.invalid` DNS, Startup dosyası, Registry Run ve olağandışı dış port bağlantısıydı.
 
-![Sysmon process investigation](screenshots/sysmon-process-investigation.png)
+[LAB] ID 8 (LSASS remote thread), ID 10 (yüksek erişimli LSASS) ve ID 25 (process tampering) için izleme kuralı hazırlandı; ancak canlı saldırı davranışıyla alarm doğrulanmadı. LSASS erişimi Windows tarafından `Access Denied` ile engellendi; ID 25 aracı Defender tarafından durduruldu. Koruma devre dışı bırakılmadı.
 
-## 5. Identity inventory, privilege sidecar and User 360
+## 6. Identity · AD Intelligence ve yetki modeli
 
-[KOD] The identity pipeline imports inventory snapshots conforming to `aegis.ad_inventory.v2` and privilege evidence with `priv_users`, `priv_groups`, and `priv_edges` (typed `user_memberof`, `user_primarygroup`, `group_memberof`). [LAB] Import/idempotency/rollback, shadow comparison, isolation, and regression test stages were reported as passing in the lab. [KOD] Elevated-role context includes both English/Turkish names for Domain/Enterprise/Schema Admins, Administrators, Account Operators and Server Operators.
+[KOD] Kimlik envanterinin `aegis.ad_inventory.v2` şemasında içe alınması, `priv_users`, `priv_groups`, `priv_edges` yan veritabanı tabloları ve `user_memberof`, `user_primarygroup`, `group_memberof` ilişki türleri geliştirildi. [LAB] Envanter ve yetki importu; izolasyon, idempotency, rollback ve User 360 testleriyle kontrol edildi.
 
 ```mermaid
 flowchart LR
-  DC[DC01 / AD] --> INV[Inventory snapshot]
-  DC --> PRIV[Privilege export]
-  INV --> IMP[Validated inventory import]
-  PRIV --> SIDE[Privilege sidecar]
-  IMP --> USER[User 360]
-  SIDE --> USER
-  USER --> RISK[Risk context]
-  USER --> TIME[Activity timeline]
-  WIN[WIN01 Security and Sysmon] --> TIME
+    DC[DC01 / Active Directory] --> ENV[Envanter dışa aktarımı]
+    DC --> YET[Yetki ilişkileri dışa aktarımı]
+    ENV --> IMP[Doğrulanan envanter içe aktarımı]
+    YET --> SID[Yetki yan veri katmanı]
+    IMP --> U[User 360]
+    SID --> U
+    WIN[WIN01 Security / Sysmon] --> Z[Davranış zaman çizelgesi]
+    U --> R[Kimlik risk bağlamı]
+    U --> Z
 ```
 
-[LAB] Identity data was exported from AD and exercised with local snapshots. [KOD] The SOC consumes that data for analysis; importing the snapshot does **not** push permissions or group membership back into the domain. This distinction is central to the project's read-only design.
+[KOD] Bu akışın yönü **AD → AEGIS** şeklindedir. SOC'un kullanıcı yetkisi değiştirmesi veya AD'ye grup üyeliği yazması söz konusu değildir.
 
-![Identity privilege screenshot](screenshots/identity-privilege-memberships.png)
+![Yetki ilişkileri](screenshots/identity-privilege-memberships.png)
 
-## 6. How to know it works
+## 7. Kurulum tamam mı? Son doğrulama
 
-1. **[LAB]** DC01 reports the `corp.local` domain and expected static network settings; WIN01 reports domain membership.
-2. **[LAB]** Security and Sysmon channels contain actual host-generated events after an authorized benign test.
-3. **[KOD]** A corresponding source/host/Event ID appears in `/api/events?mode=all&source=AD,SYSMON,WIN_SECURITY&limit=100` with appropriate original evidence.
-4. **[KOD]** Event time and SOC reception time can differ; always compare the two before declaring missing telemetry.
-5. **[KOD]** Identity views and risk context can be opened without granting the dashboard write permissions to AD.
+1. [LAB] DC01, `corp.local` domain'ini ve `10.10.30.10` IP'sini bildirir.
+2. [LAB] WIN01, domain üyesidir ve DNS çözümlemesini DC01 üzerinden yapar.
+3. [LAB] Windows Security ve Sysmon günlüklerinde güncel olaylar bulunur.
+4. [KOD] Bu olaylar `/api/events?mode=all&source=AD,SYSMON,WIN_SECURITY&limit=100` üzerinden doğru `source`, `host` ve Event ID ile görünür.
+5. [KOD] Identity ekranı envanter ve yetki analizini gösterir; olayın kaynak zamanı ile SOC alım zamanı ayrıdır.
 
-<!-- TODO: export verified GPO names, delegated rights, group membership purpose and Sysmon XML provenance -->
+<!-- TODO: güncel GPO adları, denetim alt kategorileri ve yetki matrisi -->
+<!-- TODO: her Windows makinesindeki son Sysmon XML sürümü ve collector çalıştırma biçimi -->

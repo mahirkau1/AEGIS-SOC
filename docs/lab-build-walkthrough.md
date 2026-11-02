@@ -1,228 +1,229 @@
-# AEGIS SOC build walkthrough
+# AEGIS SOC — Laboratuvarın sıfırdan kurulması ve geliştirme süreci
 
-> This document tells the project story end to end: VM creation, zoning, OPNsense, AD, collectors, telemetry, detections, identity analytics and validation. It intentionally uses the actual lab screenshots that were provided for the GitHub release.
+> **Bu belge projenin kurulum sırasını anlatır.** Sanal makinelerden başlayan çalışma; ağ segmentasyonu, Active Directory, güvenlik politikaları, collector'lar, korelasyon kuralları ve SOC ekranıyla tamamlandı. **[LAB]** laboratuvarda uygulanan/gözlenen, **[KOD]** kaynak kodunda doğrulanan bilgiyi gösterir.
 
-## 1. Build goal
+## 1. İlk karar: Tek makine yerine ayrı güvenlik bölgeleri
 
-[LAB] The goal was to build a **multi-layer SOC lab** rather than a single dashboard demo. That meant creating infrastructure that could generate evidence at several layers:
+[LAB] Amaç yalnızca bir web arayüzü oluşturmak değildi. Farklı kaynaklardan gelen olaylar arasında ilişki kurabilmek için **gerçek log üreten bir sanal şirket ağı** kuruldu. Bir kullanıcı PC'sindeki süreç, DC01'deki hesap işlemi, firewall engeli ve Suricata imzası farklı kaynaklar olarak korunacaktı.
 
-- network enforcement (OPNsense)
-- IDS signatures (Suricata)
-- DNS behavior (Unbound)
-- Windows authentication and directory activity
-- endpoint process activity (Sysmon)
-- identity relationship context
+Bu nedenle laboratuvar şu rollere ayrıldı:
 
-[LAB] Instead of treating the dashboard as the project, the dashboard is the **last stage** of the project. The real work starts with segmented VMs, routing, AD, collectors and carefully validated test events.
+| Sistem | Rol | Yerleşim |
+|---|---|---|
+| OPNsense | Güvenlik duvarı, yönlendirme, Unbound | Bölge geçitleri |
+| DC01 | Active Directory, domain DNS | SERVERS |
+| WIN01 | Domain'e alınmış Windows 11 istemci | USERS |
+| Kali | Kontrollü ağ/saldırı testleri ve network collector | SECURITY |
+| Windows ana makine | AEGIS SOC API ve Dashboard | Yönetim ağı |
 
-## 2. VM deployment and role assignment
+## 2. VirtualBox: Sanal makineler ve adaptörler
 
-[LAB] The lab was split across VirtualBox VMs. The screenshots below are part of the documented evidence.
+[LAB] OPNsense, Windows Server, Windows 11 ve Kali ayrı sanal makineler olarak hazırlandı. Her makinenin sanal ağ adaptörü görevine uygun ağa bağlandı. WAN/yönetim ve güvenlik bölgesi bağlantıları birbirinden ayrıldı.
 
-- OPNsense: gateway / segmentation / DNS / firewall
-- DC01: Active Directory domain controller for `corp.local`
-- WIN01: domain-joined user workstation
-- Kali: network testing and collector node
-- Windows SOC host: FastAPI/Uvicorn + SQLite + dashboard
+| OPNsense adaptör ayarı | DC01 adaptör ayarı |
+|---|---|
+| ![OPNsense VirtualBox](screenshots/virtualbox-opnsense-network.png) | ![DC01 VirtualBox](screenshots/virtualbox-dc01-network.png) |
 
-| OPNsense | DC01 | WIN01 | Kali |
-|---|---|---|---|
-| ![OPNsense](screenshots/virtualbox-opnsense-network.png) | ![DC01](screenshots/virtualbox-dc01-network.png) | ![WIN01](screenshots/virtualbox-win01-network.png) | ![Kali](screenshots/virtualbox-kali-network.png) |
+| WIN01 adaptör ayarı | Kali adaptör ayarı |
+|---|---|
+| ![WIN01 VirtualBox](screenshots/virtualbox-win01-network.png) | ![Kali VirtualBox](screenshots/virtualbox-kali-network.png) |
 
-## 3. Network design and segmentation
+[LAB] Ekran görüntüleri, sanal ağların birbirine karışmadan ayarlandığını göstermek için eklendi. Eksik sürüm veya donanım kaynak bilgileri tahmin edilmedi; bu laboratuvarda DMZ için ayrı bir uygulama sunucusu son durumda kurulmadı.
 
-[LAB] Four internal security zones were defined behind OPNsense.
+## 3. Subnet, güvenlik bölgesi ve IP planı
+
+[LAB] Bir şirket ağını taklit etmek için her işlev farklı subnet'e ayrıldı. Bu ayrımın amacı makineleri tamamen iletişimsiz bırakmak değil, **hangi hizmetler için bağlantı kurulabileceğini firewall kurallarıyla belirlemekti**.
 
 ```mermaid
-flowchart LR
-  subgraph MGMT[Management / Host]
-    SOC[AEGIS SOC
-192.168.1.111:8088]
-  end
-  subgraph FW[OPNsense]
-    OP[Gateway / DNS / Firewall]
-  end
-  subgraph U[USERS
-em2
-10.10.20.0/24]
-    WIN[WIN01]
-  end
-  subgraph S[SERVERS
-em3
-10.10.30.0/24]
-    DC[DC01
-10.10.30.10]
-  end
-  subgraph D[DMZ
-em4
-10.10.40.0/24]
-    DMZNOTE[No final DMZ workload documented]
-  end
-  subgraph SEC[SECURITY
-em5
-10.10.50.0/24]
-    KALI[Kali
-10.10.50.100]
-  end
-  SOC -. manages / receives logs .-> OP
-  WIN --> OP
-  DC --> OP
-  KALI --> OP
+flowchart TB
+    FW[OPNsense / PF / Unbound]
+    FW -->|em2 / 10.10.20.0/24| U[USERS / WIN01]
+    FW -->|em3 / 10.10.30.0/24| S[SERVERS / DC01 10.10.30.10]
+    FW -->|em4 / 10.10.40.0/24| D[DMZ / ayrılmış bölge]
+    FW -->|em5 / 10.10.50.0/24| K[SECURITY / Kali 10.10.50.100]
+    H[Windows ana makine / SOC 192.168.1.111:8088] -. log ve yönetim .-> FW
 ```
 
-This design matters because it makes the later detection logic meaningful. A blocked packet is not just “a blocked packet”; it belongs to a zone boundary and therefore carries context.
+[LAB] Kullanıcı bilgisayarı AD sunucusuna erişebilirken, Kali'nin test trafiğinin ayrıntıları SECURITY arayüzünde denetlenebildi. Her subnet için kural, yön, izin/engel ayrımı ve kaynak/hedef bilgilerinin anlaşılır olması projenin temel gereksinimlerindendi.
 
-![Topology](screenshots/network-lab-topology.png)
+![Laboratuvar topolojisi](screenshots/network-lab-topology.png)
 
-Additional host-side evidence:
+| Bölge | Ağ | Arayüz | Makine |
+|---|---|---|---|
+| USERS | `10.10.20.0/24` | `em2` | WIN01 (`.100`/`.101` geçmiş kayıtlarda) |
+| SERVERS | `10.10.30.0/24` | `em3` | DC01 `10.10.30.10` |
+| DMZ | `10.10.40.0/24` | `em4` | Ayrılmış ağ; kalıcı sunucu yok |
+| SECURITY | `10.10.50.0/24` | `em5` | Kali `10.10.50.100`, gateway `.1` |
+| Yönetim | `192.168.1.x` | Ayrı | SOC ana makine `.111:8088` |
 
-- ![DC01 ipconfig](screenshots/dc01-ipconfig.png)
-- ![Kali routes](screenshots/kali-routing-table.png)
+## 4. OPNsense arayüzlerinin tanımlanması
 
-## 4. OPNsense configuration journey
+[LAB] OPNsense üzerinde önce arayüzler eşleştirildi. USERS, SERVERS, DMZ ve SECURITY bölge adları, trafiğin hangi tarafta olduğunu anlaşılır hâle getirdi. Sonraki kurallar bu adlandırma üzerinden yönetildi.
 
-[LAB] OPNsense was configured in several stages:
+| OPNsense arayüz menüsü | Kurulum / servis ekranı |
+|---|---|
+| ![Arayüzler](screenshots/opnsense-interface-assignments.png) | ![Servisler](screenshots/opnsense-services-status.png) |
 
-1. Assign interfaces to zoned networks
-2. Set IP addresses/gateways
-3. Stabilize DHCP/DNS services
-4. Define inter-zone policy
-5. Add TI/IP block rules
-6. Observe DNS blocklist behavior
-7. Forward logs for SOC analysis
+![OPNsense genel durum](screenshots/opnsense-overview.png)
 
-| Interfaces | Services | Overview |
+[LAB] Herhangi bir sistem internete veya farklı bir segmente ulaşamadığında önce gateway ve yönlendirme tablosuna, sonra ilgili PF kuralına bakıldı. Bu sıranın korunması, hatanın DNS mi, rota mı yoksa politika mı olduğunu ayırmayı sağladı.
+
+## 5. DHCP/DNS çakışmasının giderilmesi
+
+[LAB] KEA DHCP ilk kurulumda bazı arayüzlerde dinleme/bind hatası verdi. `10.10.30.1:67` ve `10.10.40.1:67` için görülen çakışma düzeltilirken `dnsmasq` kapatıldı, KEA etkinleştirildi. Sonrasında IP atama ve ağ erişimi yeniden kontrol edildi.
+
+[LAB] Domain istemcileri için DNS seçiminde DC01 (`10.10.30.10`) esas alındı. Böylece WIN01, `corp.local` çözümlemesini doğru AD altyapısı üzerinden yapabildi. Daha sonra DNS olaylarında kaynak olarak DC01 görünmesinin nedeni de bu yönlendirme ilişkisiyle değerlendirildi.
+
+```powershell
+# DC01'de ağ doğrulama
+ipconfig /all
+Get-Service DNS,NTDS
+```
+
+```bash
+# Kali'de yönlendirme ve DNS doğrulama
+ip route
+dig @10.10.30.10 corp.local A +noall +answer
+```
+
+| DC01 IP çıktısı | Kali yönlendirme bilgisi |
+|---|---|
+| ![DC01 IP](screenshots/dc01-ipconfig.png) | ![Kali rota](screenshots/kali-routing-table.png) |
+
+## 6. Active Directory: Domain ve OU yapısı
+
+[LAB] Windows Server 2019'a AD DS kuruldu, sunucu domain controller olarak yükseltildi ve `corp.local` oluşturuldu. WIN01, USERS ağında olmasına karşın gerekli DNS/AD erişimiyle domain'e katıldı.
+
+[LAB] Kurumsal bir örneğe yakın olması için kullanıcılar Finance, HR, IT, Management ve Sales altında gruplandırıldı. Kayıtlarda Domain Admins, Enterprise Admins ve benzeri hassas yönetici grupları da ayrıca değerlendirildi.
+
+| OU ağacı | Finance | HR |
 |---|---|---|
-| ![Interfaces](screenshots/opnsense-interface-assignments.png) | ![Services](screenshots/opnsense-services-status.png) | ![Overview](screenshots/opnsense-overview.png) |
-
-| Rule configuration | Firewall Live View | Firewall log detail |
-|---|---|---|
-| ![Rules](screenshots/opnsense-rule-config.png) | ![Live View](screenshots/opnsense-firewall-liveview.png) | ![Detail](screenshots/opnsense-firewall-log-detail.png) |
-
-| Unbound monitoring | Unbound details | OPNsense dashboard |
-|---|---|---|
-| ![Unbound monitoring](screenshots/opnsense-unbound-monitoring.png) | ![Unbound details](screenshots/opnsense-unbound-details.png) | ![Dashboard](screenshots/opnsense-dashboard-final.png) |
-
-[LAB] The rule set enforced segmentation and allowed the lab to create controlled validation traffic. [KOD] On the SOC side, a firewall block only becomes a **verified TI block** when the rule UUID matches an approved mapping, preventing over-claiming.
-
-## 5. Active Directory setup
-
-[LAB] AD was not included just for screenshots. It was used to generate identity-relevant events and to support a later privilege model. Users and groups were arranged in business-style OUs and departmental groups.
-
-| OU structure | Finance | HR |
-|---|---|---|
-| ![OU structure](screenshots/ad-ou-structure.png) | ![Finance](screenshots/ad-finance-ou.png) | ![HR](screenshots/ad-hr-ou.png) |
+| ![OU](screenshots/ad-ou-structure.png) | ![Finance](screenshots/ad-finance-ou.png) | ![HR](screenshots/ad-hr-ou.png) |
 
 | IT | Management | Sales |
 |---|---|---|
-| ![IT](screenshots/ad-it-ou.png) | ![Management](screenshots/ad-management-ou.png) | ![Sales](screenshots/ad-sales-ou.png) |
+| ![IT](screenshots/ad-it-ou.png) | ![Yönetim](screenshots/ad-management-ou.png) | ![Satış](screenshots/ad-sales-ou.png) |
 
-[LAB] The documented groups included Finance-Users, HR-Users, IT-Users, Management-Users and Sales-Users, alongside built-in administrative groups. [KOD] The detection layer later consumed AD events such as new account creation, group membership changes, Kerberos activity and authentication failures.
+[LAB] Bu yapı yalnızca kullanıcıları ayırmak için değil; sonradan **hesap açma/silme, üyelik ekleme/çıkarma, parola sıfırlama ve yetki denetimini** SOC'a gerçek AD kayıtları olarak taşıyabilmek için kullanıldı.
 
-## 6. Collectors and ingest pipeline
+## 7. Bölgesel firewall kuralları
 
-[LAB] Telemetry was gathered from both Windows and Kali sides.
+[LAB] OPNsense'te servisler çalışır duruma geldikten sonra segmentler arasındaki erişim kuralları yazıldı. İstemci → AD trafiği, Kali → sunucu testleri ve internet yönlü trafik farklı amaçlara sahip olduğundan ayrı ele alındı.
 
-- Windows collectors: Windows Security + Sysmon
-- Kali collector: OPNsense filterlog + Suricata EVE JSON + supporting network logs
-- API ingest: `POST /api/events/ingest`
+| Kural ekranı | Canlı filterlog | Bloklanan olay ayrıntısı |
+|---|---|---|
+| ![Kural](screenshots/opnsense-rule-config.png) | ![Canlı kayıt](screenshots/opnsense-firewall-liveview.png) | ![Ayrıntı](screenshots/opnsense-firewall-log-detail.png) |
+
+[LAB] IP kara listesi politikalarında `AEGIS TI - Malicious IP Block`, `AEGIS TI - DC01 Malicious IP Block`, `AEGIS TI - Kali Malicious IP Block` etiketleri kullanıldı. [KOD] SOC, bir olayın TI engeli olduğunu söylemeden önce kural UUID'sinin onaylı eşlemeye uymasını arar.
+
+[LAB] Somut doğrulama örneği: Kali `10.10.50.100` → `198.51.100.77` (ayrılmış TEST-NET-2 adresi) TCP ve ICMP trafiğinin OPNsense tarafından engellenmesi. Böylece yalnızca soket hatası değil, **gerçek firewall BLOCK kanıtı** incelendi.
+
+## 8. Suricata IDS'in eklenmesi
+
+[LAB] OPNsense üzerinde Suricata ile ağ katmanına ikinci bir görüş açısı eklendi. Kali'den DC01'e Nmap/SYN, ICMP, SMB, Kerberos ve LDAP testleri yapıldı. Firewall PASS/BLOCK sonucuna ek olarak Suricata EVE JSON imzalarının SOC'ta görünüp görünmediği kontrol edildi.
+
+[LAB] Önceki oturumlarda GPL ICMP PING, Nmap ve `KALI SECURITY TEST` gibi imzalar gözlendi. [KOD] Bilinen laboratuvar imzası low risk sınıflandırılır; tüm IDS alarmları otomatik saldırı doğrulaması sayılmaz.
+
+```bash
+# İzinli laboratuvar hedefinde örnek kontrol
+nmap -sS -Pn -n -p 53,88,135,389,445 --max-retries 1 10.10.30.10
+```
+
+![Network tespit ayrıntısı](screenshots/soc-network-detail.png)
+
+## 9. Unbound ve DNS kara listeleri
+
+[LAB] Unbound istatistikleri ve sorgu ayrıntıları OPNsense ekranından izlendi. DNS testlerinde NXDOMAIN davranışı ile politika engeli birbirinden ayrıldı. WIN01 sorgularının DC01 üzerinden gelmesi, kaynak IP yorumunda dikkate alındı.
+
+| Unbound izleme | Unbound ayrıntılar |
+|---|---|
+| ![Unbound](screenshots/opnsense-unbound-monitoring.png) | ![DNS ayrıntısı](screenshots/opnsense-unbound-details.png) |
+
+[KOD] Mevcut DNS collector'ının açık Unbound block karar alanını SOC'a tam taşımaması bilinen veri kısıtıdır; bu nedenle Dashboard'da her NXDOMAIN "kara liste block" diye gösterilmez.
+
+## 10. Kali: Network collector kurulumu
+
+[LAB] OPNsense loglarını doğrudan uygulamadan okumak yerine Kali üzerinde rsyslog ile karşılayan bir collector katmanı kuruldu. Geçmiş kurulumda UDP `514`, `/var/log/opnsense/firewall.log`, `/var/log/opnsense/dns.log`, `/var/log/opnsense/suricata.log` ve `/opt/ad-opnsense-soc/collector.py` kullanıldı.
+
+[LAB] Collector'ın görevi logları almak, kaynağa uygun hâle getirmek ve SOC'un HTTP ingest endpoint'ine göndermekti. Sonraki çalışmalarda `aegis-collector.service` ve `aegis-dns-reader.timer` hizmetleri kullanılarak elle terminal açık bırakma ihtiyacı azaltıldı.
+
+```bash
+systemctl is-active rsyslog aegis-collector.service aegis-dns-reader.timer
+sudo journalctl -u aegis-collector.service -n 20 --no-pager
+```
+
+[LAB] Bazı eski testlerde ağ logları ulaşıyor görünmesine rağmen Dashboard'da yalnızca düşük değerli UDP/123 ve broadcast olayları çıkıyordu. Firewall `pass`/`block` ayrımı ve severity eşlemeleri iyileştirilerek anlamlı olayların görünmesi sağlandı.
+
+## 11. DC01 ve WIN01 için Windows collector
+
+[LAB] Windows Security olayları ile Sysmon Operational logu ayrı Windows collector mekanizmalarıyla SOC'a iletildi. WIN01 Sysmon tarafında ilk olarak `1,3,22`; ilerleyen aşamada Startup `11`, Registry `13`, sonra da LSASS/tampering türleri `8,10,25` izleme kapsamına alındı.
+
+[KOD] AEGIS, özgün XML verisinden görüntü, süreç komutu, hedef dosya, Registry hedefi ve DNS sorgu alanlarını çıkarıp ilgili kurallarla karşılaştırır.
+
+| Sysmon genel ekran | Süreç analizi | Olay ayrıntısı |
+|---|---|---|
+| ![Genel](screenshots/sysmon-endpoint-overview.png) | ![Süreç](screenshots/sysmon-process-investigation.png) | ![Detay](screenshots/sysmon-analysis-detail.png) |
+
+[LAB] WIN01 üzerinde **sekiz ayrı tespit kuralı** gerçek sistem olaylarıyla AEGIS'e ulaştı: Office adlı test süreci üzerinden CMD, script shell, encoded PowerShell, şüpheli PowerShell ifadesi, `.invalid` DNS, Startup dosyası, Registry autorun ve olağandışı dış port. ID 8/10/25 için izleme ve kod testleri yapıldı; gerçek zararlı müdahale denemeleriyle alarm doğrulanmadı.
+
+## 12. FastAPI, SQLite ve SOC arayüzü
+
+[KOD] Python uygulaması `POST /api/events/ingest` üzerinden olay kabul eder, `parser.py` ile normalize eder, olay zamanını ve SHA-256 parmak izini değerlendirir, SQLite WAL içine saklar. Ağ, AD, Sysmon, MITRE ve Identity görünümleri aynı kanıtların farklı analiz katmanlarını sağlar.
 
 ```mermaid
 flowchart LR
-    OPN[OPNsense filterlog] --> KC[Kali collector]
-    SUR[Suricata EVE] --> KC
-    WSEC[Windows Security] --> WC[Windows collector]
-    SYS[Sysmon] --> WC
-    KC --> ING[FastAPI ingest]
-    WC --> ING
-    ING --> NORM[Normalize + event time + SHA-256 dedup]
-    NORM --> DB[(SQLite / WAL / bounded retention)]
-    DB --> DET[Detections + Identity + MITRE]
-    DET --> UI[Dashboard]
-    UI -. optional .-> AI[Ollama]
+    F[Firewall / Suricata / DNS] --> K[Kali collector]
+    W[Windows Security / Sysmon] --> C[Windows collector]
+    K --> I[POST /api/events/ingest]
+    C --> I
+    I --> N[Normalizasyon / zaman / tekilleştirme]
+    N --> DB[(SQLite WAL)]
+    DB --> A[Ağ / AD / Sysmon / MITRE / Identity]
+    A --> UI[Dashboard]
+    UI -. opsiyonel .-> L[Ollama]
 ```
 
-[LAB] Dashboard text historically referenced a “Kali Collector”; the exact collector code was not present in the repository snapshot, so documentation treats that as lab-observed deployment rather than code-proven source.
+[KOD] AEGIS güvenlik sistemlerine müdahale etmez. Algılanan olayları kaydeder, ilişkileri hesaplar ve analistin incelemesini sağlar. [LAB] Ana Windows makinesindeki servis `192.168.1.111:8088` üzerinden kullanıldı.
 
-## 7. Sysmon expansion
+## 13. Identity · AD Intelligence geliştirmeleri
 
-[LAB] Sysmon was progressively expanded. Later work explicitly brought Event IDs `11` and `13` into the collector path so startup-file and autorun-registry events would appear in the dashboard. WIN01 validation later produced multiple live detections.
+[LAB] Sonraki geliştirme aşamasında yalnızca olay listesi değil, **kimlik odaklı inceleme** öne çıkarıldı. AD envanteri, yetki ilişkileri, iç içe grup üyelikleri, kritik gruplar, User 360, risk bağlamı ve davranış zaman çizelgesi geliştirildi.
 
-| Overview | Investigation | AI/detail panel |
+| AD Intelligence | Kullanıcı listesi | Identity güvenlik görünümü |
 |---|---|---|
-| ![Overview](screenshots/sysmon-endpoint-overview.png) | ![Investigation](screenshots/sysmon-process-investigation.png) | ![Detail](screenshots/sysmon-analysis-detail.png) |
+| ![AD Intelligence](screenshots/identity-ad-intelligence.png) | ![Kullanıcılar](screenshots/identity-users-list.png) | ![Kimlik güvenliği](screenshots/identity-security-intelligence.png) |
 
-[KOD] Current Sysmon coverage documented for the project includes Event IDs `1, 3, 8, 10, 11, 12, 13, 22, 25` and rule families such as Office->shell, script->shell, encoded PowerShell, suspicious DNS, autorun and startup artifacts, and LSASS-related behavior.
-
-## 8. Identity feature set
-
-[LAB] A major second phase turned AD evidence into identity-centered analysis. Inventory, privilege evidence, risk context and behavior timeline components were added as read-only sidecars.
-
-| AD Intelligence | Users list | Security workspace |
+| Yetki üyelikleri | User 360 | Risk analizi |
 |---|---|---|
-| ![AD Intelligence](screenshots/identity-ad-intelligence.png) | ![Users](screenshots/identity-users-list.png) | ![Workspace](screenshots/identity-security-intelligence.png) |
+| ![Üyelikler](screenshots/identity-privilege-memberships.png) | ![Kullanıcı ayrıntısı](screenshots/identity-user360-profile.png) | ![Risk](screenshots/identity-user360-risk-analysis.png) |
 
-| Privilege memberships | User360 profile | Risk analysis |
-|---|---|---|
-| ![Privilege memberships](screenshots/identity-privilege-memberships.png) | ![User360 profile](screenshots/identity-user360-profile.png) | ![Risk analysis](screenshots/identity-user360-risk-analysis.png) |
-
-| User360 summary | Detailed identity view |
+| Kullanıcı 360 özeti | Kimlik olay ayrıntısı |
 |---|---|
-| ![User360 summary](screenshots/soc-identity-user360-summary.png) | ![Identity details](screenshots/soc-identity-details.png) |
+| ![User 360](screenshots/soc-identity-user360-summary.png) | ![Identity olay](screenshots/soc-identity-details.png) |
 
-[KOD] This part now models inventory (`aegis.ad_inventory.v2`), privilege edges, nested memberships, critical-group context, authenticated privilege API controls, user risk context and short behavior timelines.
+[KOD] Envanter şeması `aegis.ad_inventory.v2`, yetki yan katmanı `priv_users/priv_groups/priv_edges` ile tanımlandı. [LAB] Laboratuvar testi için 20 kullanıcı ve 57 grup içeren bir yetki envanteri incelendi; bu sayılar sistemde sabit sınır değildir.
 
-## 9. Analyst-facing dashboard
+## 14. Son Dashboard ve gerçek olay doğrulaması
 
-[LAB] The final dashboard is not a generic front end: it reflects the end result of the full build.
-
-| Security command center | All logs |
+| SOC komuta merkezi | Tüm loglar |
 |---|---|
-| ![Command center](screenshots/soc-security-command-center.png) | ![All logs](screenshots/soc-all-logs.png) |
+| ![Ana ekran](screenshots/soc-security-command-center.png) | ![Tüm loglar](screenshots/soc-all-logs.png) |
 
-| Network detail | Network logs | Network summary |
+| Network analizi | Network logları | Ağ tespit özeti |
 |---|---|---|
-| ![Network detail](screenshots/soc-network-detail.png) | ![Network logs](screenshots/soc-network-logs.png) | ![Network summary](screenshots/soc-network-detection-summary.png) |
+| ![Network detay](screenshots/soc-network-detail.png) | ![Network log](screenshots/soc-network-logs.png) | ![Network özet](screenshots/soc-network-detection-summary.png) |
 
-| CLI validation output |
+| Terminal doğrulama kaydı |
 |---|
-| ![CLI validation](screenshots/soc-cli-validation-output.png) |
+| ![Terminal test sonucu](screenshots/soc-cli-validation-output.png) |
 
-## 10. Validation examples
+[LAB] Son doğrulamada firewall engelleri, Suricata olayları, Windows Security/AD hareketleri ve Sysmon uyarıları ayrı ayrı incelendi. [KOD] Sistem, saldırı adayı ile doğrulanmış kötü amaçlı etkinlik kavramlarını birbirine eşitlemez.
 
-[LAB] Examples of validated project behavior included:
+## 15. Sonuç ve belgeleme sınırı
 
-- firewall block evidence from SECURITY -> test IP traffic
-- AD group add/remove events reflected in identity timeline and detections
-- Sysmon PowerShell / DNS / startup / autorun detections on WIN01
-- identity User360 and privilege evidence summaries
-- differentiated handling of blocklist evidence vs NXDOMAIN bursts
+[LAB] Kurulumu tamamlanan bu laboratuvar; **sanal ağ → güvenlik duvarı → AD/domain → test makinesi → collector'lar → SOC tespitleri → analist ekranı** zincirini çalıştırdı. [KOD] Uygulama salt-okunur izleme/analiz yapar; bloke işlemleri OPNsense ve mevcut Windows güvenlik ilkelerine aittir.
 
-## 11. What the project currently detects
+**Açıkça ayrılmış doğrulama sınırları:** Unbound'un kesin block karar alanı collector'da tam taşınmıyor; Sysmon ID 8/10/25 için zararlı davranışı gerçekten üreten canlı alarm testi yapılmadı. Bunlar laboratuvarın kurulmadığı anlamına gelmez; veri/tetikleme kanıtının kapsamını tanımlar.
 
-See also `detections.md`, but in short:
-
-- **Network**: vertical scan, horizontal scan, same-pair correlation, Suricata severity mapping, known-lab signature suppression
-- **AD/Windows Security**: brute-force, spray, lockout, success-after-fail, Kerberoast / AS-REP roast indicators, log clear, new account, privileged group membership changes
-- **Sysmon**: PowerShell, script host, Office shelling, suspicious DNS, startup/autorun, process access and tampering–related coverage
-- **Identity**: group membership evidence, critical group presence, user-centric risk context, short behavior timelines
-
-## 12. Scope and limitations
-
-[LAB] AEGIS was designed to be honest about what it knows.
-
-- It **monitors and analyzes**; it does not enforce policy itself.
-- DNS blocklist decisions are not yet fully promoted by the collector into first-class “verified DNS block” counters.
-- Dashboard findings should be read as analyst review evidence, not absolute proof of compromise.
-
-## 13. Related documents
-
-- `README.md`
-- `README.tr.md`
-- `architecture.md`
-- `opnsense-setup.md`
-- `active-directory-setup.md`
-- `blocklists.md`
-- `detections.md`
-- `data-flow.md`
-- `screenshots/README.md`
+<!-- TODO: OPNsense kesin sürümü, etkin Suricata IPS/IDS modu, tüm firewall UUID listesi -->
+<!-- TODO: kullanılacaksa resmi lisans dosyası ve güncel servis exportları -->

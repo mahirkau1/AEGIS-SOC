@@ -1,131 +1,134 @@
-# AEGIS SOC — Data flow, storage and evidentiary integrity
+# AEGIS SOC — Log akışı, veri modeli ve API
 
-> Read-only SOC telemetry pipeline. `[KOD]` = source code evidence from provided application snapshots; `[LAB]` = lab-observed environment.
+> Bu belge, olayın üretildiği sistemden analistin ekranına gelene kadar geçtiği aşamaları açıklar. **[KOD]** kaynak kodunda görülen çalışma biçimi; **[LAB]** gerçek laboratuvar bağlantısı ve test kayıtlarıdır.
 
-## 1. End-to-end flow
+## 1. Log kaynakları
+
+| Kaynak (`source`) | Üretici | Ham kayıt / örnek |
+|---|---|---|
+| `FIREWALL` | [LAB] OPNsense PF / filterlog | PASS / BLOCK, kaynak/hedef IP, port, arayüz, kural kimliği |
+| `SURICATA` | [LAB] Suricata | EVE JSON, imza, severity, flow, yön |
+| `DNS` | [LAB] OPNsense Unbound | DNS sorgusu ve yanıt bağlamı; açık block kararı her kayıtta yok |
+| `AD` | [LAB] DC01 Security | Hesap/grup/kimlik doğrulama olayları |
+| `WIN_SECURITY` | [LAB] Windows Security | Oturum ve yerel güvenlik olayları |
+| `SYSMON` | [LAB] WIN01/DC01 Sysmon | Process, network, dosya, Registry ve DNS olayları |
+
+[LAB] Windows collector ve Kali ağ collector'ı birbirinden ayrıydı. Kali tarafında rsyslog üzerinden ağ logları toplandı; Windows bilgisayarlarında Event Log kanalları gönderildi.
+
+## 2. Uçtan uca kayıt hattı
 
 ```mermaid
-flowchart TD
-  FW[OPNsense filterlog] --> KALI[Kali rsyslog + collectors]
-  SUR[Suricata EVE JSON] --> KALI
-  DNS[Unbound query/reply] --> KALI
-  AD[DC01 Security] --> WIN[Windows collectors]
-  EP[WIN01 Security + Sysmon] --> WIN
-  KALI --> API[POST /api/events/ingest]
-  WIN --> API
-  API --> AUTH[Optional X-SOC-Token]
-  AUTH --> NORMAL[app/parser.py / normalize]
-  NORMAL --> TIME[event_time / occurred_at]
-  TIME --> HASH[SHA-256 fingerprint]
-  HASH --> DB[(SQLite WAL / bounded retention)]
-  DB --> NET[Network / incident engine]
-  DB --> ADDET[AD / identity]
-  DB --> SYS[Sysmon / investigation]
-  NET --> MIT[MITRE + evidence context]
-  ADDET --> MIT
-  SYS --> MIT
-  MIT --> UI[Dashboard / API views]
-  MIT -.-> LLM[Optional Ollama analysis]
+flowchart LR
+    FW[OPNsense filterlog] --> KC[Kali collector]
+    IDS[Suricata EVE JSON] --> KC
+    DNS[Unbound sorguları] --> KC
+    AD[DC01 Windows Security] --> WC[Windows collector]
+    WIN[WIN01 Security / Sysmon] --> WC
+    KC --> API[POST /api/events/ingest]
+    WC --> API
+    API --> N[parser.py ile normalizasyon]
+    N --> TS[Olay ve alım zamanı]
+    TS --> FP[SHA-256 tekilleştirme]
+    FP --> DB[(SQLite / WAL)]
+    DB --> NET[Network analizleri]
+    DB --> ID[AD / Identity analizleri]
+    DB --> SYS[Sysmon tespitleri]
+    DB --> MIT[MITRE eşleştirme]
+    NET --> UI[AEGIS Dashboard]
+    ID --> UI
+    SYS --> UI
+    MIT --> UI
+    UI -. isteğe bağlı .-> LLM[Ollama / yerel AI]
 ```
 
-[LAB] The network collector was run on Kali, and Windows collectors ran on the individual Windows VMs. [KOD] The API performs normalization and preserves a payload containing the original raw event before writing it to SQLite. [KOD] Detection and display query the stored event evidence; local LLM use is optional.
+[KOD] `POST /api/events/ingest` üzerinde yapılandırmaya bağlı token kontrolü, Pydantic veri doğrulaması, kaynak normalizasyonu ve saklama akışı bulunur. [LAB] AEGIS Dashboard'daki farklı modüller aynı fiziksel olayın farklı güvenlik bağlamlarına bakar; ham kanıtı değiştirmez.
 
-## 2. Ingestion contract
+![SOC tüm log kayıtları](screenshots/soc-all-logs.png)
 
-[KOD] `POST /api/events/ingest` accepts JSON with `source`, `message`, `severity`, `host`, and `raw`. [KOD] Valid fields are constrained by the Pydantic input model: `source` 1–40 chars, `message` up to 8,000 chars, `severity` up to 16 chars, `host` up to 255 chars, `raw` up to 20,000 chars. [KOD] An optional shared secret requires `X-SOC-Token` when `SOC_INGEST_TOKEN` is configured.
+## 3. Collector → API veri sözleşmesi
+
+[KOD] Collector, `source`, `severity`, `host`, `message` ve `raw` alanlarını sağlayabilir. Kaynak tipine göre `raw` alanının yapısı değişir: filterlog satırı, EVE JSON veya Windows olay XML'i olabilir.
 
 ```json
 {
   "source": "SYSMON",
-  "message": "Example Sysmon event in an authorized lab",
   "severity": "info",
-  "host": "LAB-WIN01",
-  "raw": "{\"event_id\":1,\"note\":\"example-only\"}"
+  "host": "WIN01",
+  "message": "Sysmon Event ID 11 on WIN01",
+  "raw": "<örnek-olay-xml-verisi>"
 }
 ```
 
-[KOD] The JSON above is **illustrative input**, not a guarantee that it triggers any detection. [KOD] Successful inserts return `{"status":"accepted"}` while fingerprints already in the store return `{"status":"duplicate"}`. Ingest acceptance does not prove a threat; collectors must send real source evidence for operational validation.
+Bu JSON yalnızca **şema örneğidir**, gerçek log kaydı veya doğrulanmış bir olay değildir. Yetkili collector'ın gönderdiği özgün kayıt saklanır; gizli tokenlar dokümana eklenmez.
 
-## 3. Source-specific normalization
-
-| `source` | Representative fields / behavior |
-|---|---|
-| `FIREWALL` | [KOD] Parses OPNsense `filterlog` action, protocol, source/destination and ports when present. |
-| `SURICATA` | [KOD] Parses EVE JSON including `alert.signature`, severity, event type, flow metadata, interface and direction. |
-| `DNS` | [KOD] Extracts Unbound query client, domain, record type and certain response codes; **not the definitive blocklist decision**. |
-| `AD` / `WIN_SECURITY` | [KOD] Security event IDs, account/host/source details, Windows authentication and authorization context. |
-| `SYSMON` | [KOD] Event ID, process and parent GUID, image, parent image, command line, user and raw EventData fields. |
-
-## 4. Time handling, deduplication and limits
-
-- **[KOD]** AEGIS records a SOC reception timestamp and derives an optional **event occurrence timestamp** from source evidence. Delayed collectors may legitimately produce historical event times.
-- **[KOD]** Deduplication SHA-256 input is formed from source, host and raw payload (falling back to message). SHA-256 fingerprints avoid repeated inserts of identical delivered records.
-- **[KOD]** The SQLite database enables WAL and a write lock. It contains a unique fingerprint field and indexes for alert status, source and receipt time.
-- **[KOD]** Default `SOC_MAX_EVENTS=50000`, lower-bounded at 1,000; retention trimming is performed periodically after inserts. **This is not immutable archive storage.**
-- **[KOD]** `/api/events` defaults to alert mode, supports `all` and `blocks`, caps individual `limit` at 5,000, and allows `source`, `offset` and timezone-aware `since` / `until` filters. [KOD] Time-range filters operate on **receipt timestamps**, not source event occurrence time.
-
-## 5. Investigation APIs
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /` | [KOD] HTML dashboard (single-page template). |
-| `POST /api/events/ingest` | [KOD] Event input, optional token and normalization. |
-| `GET /api/events` | [KOD] Filtered event listing and pagination. |
-| `GET /api/status` | [KOD] Per-source freshness and overall service status. |
-| `GET /api/source-health` | [KOD] Extended source-health signals. |
-| `GET /api/incidents` | [KOD] Incident analysis from network alerts with AD context when available. |
-| `GET /api/network/detections` | [KOD] Network scan and sweep candidates. |
-| `GET /api/ad/intelligence` | [KOD] AD detection and analysis summary. |
-| `GET /api/sysmon/investigation` | [KOD] Endpoint investigation view. |
-| `/api/mitre/*`, `/api/identity/*` | [KOD] Dedicated technique and identity modules (exact route list depends on installed feature modules). |
-
-### Read-only dashboard checks
+### API sorguları
 
 ```powershell
 $base = 'http://127.0.0.1:8088'
 Invoke-RestMethod "$base/api/status"
 Invoke-RestMethod "$base/api/source-health"
-Invoke-RestMethod "$base/api/events?mode=all&source=FIREWALL,SURICATA,DNS&limit=25"
-Invoke-RestMethod "$base/api/events?mode=all&source=AD,SYSMON,WIN_SECURITY&limit=25"
+Invoke-RestMethod "$base/api/events?mode=all&source=FIREWALL&limit=25"
+Invoke-RestMethod "$base/api/events?mode=all&source=SURICATA&limit=25"
+Invoke-RestMethod "$base/api/events?mode=all&source=SYSMON&limit=25"
 ```
 
-[KOD] HTTP 200 means a route answered; **freshness and expected sensor content** must still be examined. [LAB] The deployed API was accessed from a Windows management workstation at `192.168.1.111:8088` during lab checks.
+[LAB] Bu komutlar SOC'un kurulu olduğu makinede kullanılmak üzere belgelenmiştir. `HTTP 200`, endpoint'in cevap verdiğini gösterir; kaynağın güncel log gönderdiğini ayrıca zaman damgası ve içerikle doğrulamak gerekir.
 
-## 6. Alert lifecycle and interpretation
+## 4. Normalizasyon ve veri saklama
+
+[KOD] `parser.py`, gelen kaydı kaynağa göre anlamlandırır; uygun alanlar çıkarılır, özgün `raw` veri korunur. Depolamada SHA-256 temelli olay parmak iziyle tekilleştirme ve SQLite WAL kullanılır. Varsayılan olay tutma sınırı `SOC_MAX_EVENTS=50000` olarak ayarlanabilir.
+
+[KOD] `/api/events` varsayılan olarak alarm görünümüyle çalışır; `mode=all` ve `mode=blocks` seçenekleri vardır. Tek sorguda `limit` en çok 5.000 ile sınırlandırılır; sayfalama için `offset`, kaynak filtreleme için `source`, zaman için `since` ve `until` kullanılabilir. Zaman filtresi veritabanındaki **SOC alım zamanına** uygulanır; olayın Windows'ta gerçekleştiği zamanla farklı olabilir.
 
 ```mermaid
 sequenceDiagram
-  participant S as Sensor
-  participant C as Collector
-  participant A as FastAPI
-  participant DB as SQLite
-  participant D as Detection engine
-  participant UI as Analyst
-  participant LLM as Optional Ollama
-  S->>C: Original record (timestamp + raw)
-  C->>A: POST event
-  A->>A: Token / Pydantic / normalization
-  A->>DB: Insert if SHA-256 fingerprint new
-  UI->>D: Query alert / incident
-  D->>DB: Read source evidence
-  D-->>UI: Severity + reasoning + MITRE candidate
-  UI->>LLM: Optional evidence-bounded analysis
-  LLM-->>UI: Analyst assistance, not verdict
+    participant S as Kaynak sensör
+    participant C as Collector
+    participant A as FastAPI
+    participant D as SQLite
+    participant E as Tespit motoru
+    participant U as Analist
+    S->>C: Olay + kaynak zamanı + ham veri
+    C->>A: POST /api/events/ingest
+    A->>A: Token / veri doğrulama / parser
+    A->>D: Parmak izi yeniyse kaydet
+    U->>E: Alarm veya olay sorgusu
+    E->>D: Kanıtları oku
+    E-->>U: Risk, açıklama ve MITRE bağlamı
 ```
 
-[KOD] The same source record remains available for an analyst to inspect the decision path. [KOD] Deduplication avoids duplicate storage but does not assert that distinct sensor records represent separate attacks. [KOD] An LLM explanation is downstream of logged evidence and does not authorize blocking or account modification.
+[KOD] Çift kaydı elemek ile farklı kaynakların aynı saldırıyı kanıtlaması farklı şeylerdir. Parmak izi, benzer kayıtların tekrar saklanmasını azaltır; her eşleşmenin tek saldırı olduğunu iddia etmez.
 
-## 7. Troubleshooting checklist
+## 5. Analiz ekranları ve API uçları
 
-1. **[LAB]** Verify a fresh sensor-side event in OPNsense Live View, EVE JSON, Windows Security or Sysmon Operational log.
-2. **[LAB]** Confirm the active collector process/service and its configured event IDs, port and reachable API host.
-3. **[KOD]** Verify ingest authentication and response (`accepted` vs `duplicate`), then query `/api/events?mode=all` with the correct source and pagination.
-4. **[KOD]** Compare original event time and SOC receipt time before using `since` filters.
-5. **[KOD]** Check rule conditions, allow/deny semantics and correlation window; a raw event need not become an alarm.
-6. **[LAB]** Do not disable Defender, weaken GPO auditing or bypass Windows protections merely to turn a controlled lab check green.
+| Uç nokta | Görev |
+|---|---|
+| `GET /` | [KOD] Ana SOC arayüzü |
+| `POST /api/events/ingest` | [KOD] Olay kabulü ve işleme |
+| `GET /api/events` | [KOD] Olay listeleme, filtreleme ve sayfalama |
+| `GET /api/status` | [KOD] Servis/kaynak durumunu değerlendirme |
+| `GET /api/source-health` | [KOD] Veri kaynağı sağlığı |
+| `GET /api/incidents` | [KOD] İlişkilendirilmiş olay incelemesi |
+| `GET /api/network/detections` | [KOD] Ağ taraması ve benzer örüntü adayları |
+| `GET /api/ad/intelligence` | [KOD] AD denetim ve tespit özeti |
+| `GET /api/sysmon/investigation` | [KOD] Uç nokta süreç analizi |
+| `/api/mitre/*`, `/api/identity/*` | [KOD] İlgili modüllerin etkin sürümdeki uçları |
 
-### Open reproducibility items
+![Security Command Center](screenshots/soc-security-command-center.png)
 
-<!-- TODO: publish redacted collector configuration / rsyslog filter snippets -->
-<!-- TODO: publish test fixtures with all secret and user identifiers removed -->
-<!-- TODO: verify latest public repo commit and match route docs to that revision -->
+## 6. Opsiyonel Ollama / yerel AI
+
+[KOD] Yerel AI, kayıt ve kural çıktısına dayanarak analistin incelemesini hızlandırmaya yönelik yardımcı katmandır. [LAB] Ollama `127.0.0.1:11434` ve `qwen3:4b-instruct` modeliyle kullanıldı. Çıktılar kalite kontrolüne tabi tutulur; AI kararına dayanarak kullanıcı kilitleme, firewall kuralı değiştirme veya başka müdahale yapılmaz.
+
+## 7. Collector veya olay görünmüyorsa
+
+1. [LAB] İlk olarak olayın kaynakta oluştuğunu doğrula: OPNsense Live View, Suricata EVE, Windows Security ya da Sysmon Operational.
+2. [LAB] Collector'ın gerçekten çalıştığını ve doğru ID'leri alacak biçimde filtrelendiğini doğrula.
+3. [LAB] SOC API erişimini ve varsa ingest token yapılandırmasını kontrol et.
+4. [KOD] `/api/events?mode=all` sorgusuyla **kaynağa göre** olayları incele; yalnızca alarmları sorgulamak yeterli olmayabilir.
+5. [KOD] `since` filtresi kullanmadan önce SOC alım zamanı ile kaynak olay zamanını karşılaştır.
+6. [KOD] Kuralın tetik koşullarını kontrol et; ham log kaydı her zaman alarm oluşturmaz.
+7. [LAB] Test amacıyla Defender'ı kapatma veya AD denetimini gereksiz şekilde gevşetme.
+
+<!-- TODO: gizli verileri çıkarılmış Kali collector yapılandırması ve Windows zamanlanmış görev exportu -->
+<!-- TODO: güncel kurulum sürümündeki tüm API uçlarının dökümü -->

@@ -1,115 +1,126 @@
-# AEGIS SOC — Architecture and trust boundaries
+# AEGIS SOC — Sistem mimarisi ve güven sınırları
 
-> **Evidence legend:** `[KOD]` = checked in the supplied application source snapshots; `[LAB]` = lab observation or operator-reported configuration. This is a segmented lab, not a production reference design. [KOD] The SOC performs read-only monitoring and investigation rather than traffic enforcement.
+> **Kanıt işaretleri:** **[KOD]** kaynak kodunda incelenen davranış, **[LAB]** laboratuvar kurulumu, ekran görüntüsü veya çalıştırılmış testle desteklenen bilgi. Bu yapı bir üretim ortamı şablonu değil, segmentlere ayrılmış bir öğrenme laboratuvarıdır. **AEGIS olayları izler ve analiz eder; engellemeyi OPNsense ve Windows güvenlik ilkeleri yapar.**
 
-## 1. Design principles
+## 1. Tasarım yaklaşımı
 
-[KOD] The application accepts security telemetry from named sources, normalizes it, preserves relevant original evidence, stores it in bounded SQLite, and exposes separate analytical views for network, endpoint, AD and identity. [KOD] Scoring and MITRE associations are explanatory suggestions; neither establishes that an attack succeeded. [LAB] OPNsense is the enforcement plane, and Windows hosts are protected endpoints in the lab.
+[LAB] Proje, tek ağda çalışan bağımsız makineler yerine, sınırları güvenlik duvarı tarafından denetlenen birkaç bölüm üzerine kuruldu. Kullanıcı bilgisayarı, etki alanı sunucusu ve güvenlik test makinesi farklı ağlarda tutuldu. Bu sayede izin verilen ve engellenen trafik; hangi arayüzden geldiği, hangi kurala takıldığı ve hangi log kaynağında göründüğüyle birlikte incelenebildi.
 
-### Physical / logical network topology
+[KOD] AEGIS, collector üzerinden alınan olayları kaynağa göre ayrıştırır, zaman bilgilerini işler, özgün kaydı korur, SQLite'a yazar ve ağ/AD/Sysmon/Identity analizine sunar. MITRE ATT&CK ilişkisi ve risk puanı **inceleme bağlamıdır**; olayın saldırı olarak kesinleştiği anlamına gelmez.
+
+## 2. Fiziksel ve mantıksal ağ topolojisi
 
 ```mermaid
 flowchart TB
-  WAN[WAN / Internet<br/>interface assignment TODO] --> FW[OPNsense<br/>segmentation + PF + Unbound]
-  MGMT[Management workstation<br/>192.168.1.111 : 8088] -.-> FW
-  FW -->|em2 : 10.10.20.0/24| USERS[USERS<br/>WIN01 : .100 or .101]
-  FW -->|em3 : 10.10.30.0/24| SERVERS[SERVERS<br/>DC01 : 10.10.30.10<br/>corp.local]
-  FW -->|em4 : 10.10.40.0/24| DMZ[DMZ subnet<br/>no deployed server]
-  FW -->|em5 : 10.10.50.0/24| SECURITY[SECURITY<br/>Kali : 10.10.50.100]
-  SERVERS -->|AD / Sysmon events| MGMT
-  USERS -->|Security / Sysmon events| MGMT
-  FW -.->|syslog| SECURITY
-  SECURITY -->|collector POST| MGMT
+    WAN[WAN / İnternet<br/>tam arayüz eşlemesi doğrulanacak] --> FW[OPNsense<br/>PF kuralları / Unbound DNS]
+    SOC[SOC ana makinesi<br/>192.168.1.111:8088] -. yönetim / log .-> FW
+    FW -->|em2 / 10.10.20.0/24| USERS[USERS<br/>WIN01: .100 veya .101]
+    FW -->|em3 / 10.10.30.0/24| SERVERS[SERVERS<br/>DC01: 10.10.30.10 / corp.local]
+    FW -->|em4 / 10.10.40.0/24| DMZ[DMZ<br/>ayrılmış ağ / kalıcı sunucu yok]
+    FW -->|em5 / 10.10.50.0/24| SEC[SECURITY<br/>Kali: 10.10.50.100]
+    USERS -. Security / Sysmon .-> SOC
+    SERVERS -. AD / Sysmon .-> SOC
+    FW -. syslog .-> SEC
+    SEC -. collector POST .-> SOC
 ```
 
-[LAB] `em2`, `em3`, `em4`, and `em5` were used for USERS, SERVERS, DMZ, and SECURITY respectively; the WAN/em0/em1 physical mapping is intentionally not guessed. [LAB] WIN01 has appeared at both `.100` and `.101` across observations, while `10.10.30.10` (DC01), `10.10.50.100` (Kali) and `192.168.1.111` (SOC) have specific observed roles. [LAB] The DMZ is a configured segment without a separate deployed host.
+[LAB] OPNsense; USERS, SERVERS, DMZ ve SECURITY arayüzlerinin ortak geçiş noktasıdır. Diyagramdaki oklar veri ve log yönlerini gösterir; her subnet'in diğerine koşulsuz erişimi olduğunu göstermez. Tam WAN eşlemesi ve son arayüz maskeleri güncel yapılandırma yedeğinden kontrol edilmelidir.
 
-![Virtual lab network view](screenshots/network-lab-topology.png)
+![AEGIS ağ topolojisi](screenshots/network-lab-topology.png)
 
-## 2. Security and telemetry layers
+### Adres planı
 
-| Layer | Function / boundary |
+| Bölge | Arayüz | Ağ | İlişkili makine / görev |
+|---|---|---|---|
+| USERS | `em2` | `10.10.20.0/24` | [LAB] WIN01; eski testlerde `.100`, başka bir kayıtta `.101` |
+| SERVERS | `em3` | `10.10.30.0/24` | [LAB] DC01 `10.10.30.10` / etki alanı DNS |
+| DMZ | `em4` | `10.10.40.0/24` | [LAB] Ayrılmış ağ, son durumda ayrı iş yükü yok |
+| SECURITY | `em5` | `10.10.50.0/24` | [LAB] Kali `10.10.50.100`, ağ geçidi `10.10.50.1` |
+| Yönetim | Ayrı ağ | `192.168.1.x` | [LAB] SOC API ve arayüz `192.168.1.111:8088` |
+
+![OPNsense arayüzleri](screenshots/opnsense-interface-assignments.png)
+
+## 3. Güvenlik katmanları
+
+| Katman | Uygulamadaki sorumluluğu |
 |---|---|
-| Network segmentation | [LAB] OPNsense PF applies firewall policy independently of AEGIS; deny events are emitted via filterlog. |
-| Network IDS | [LAB] Suricata inspects selected lab traffic and emits EVE JSON alerts; exact IDS/IPS mode and full rule-set inventory require export. |
-| DNS | [LAB] Unbound answers or blocks configured domain queries; Windows DNS forwarding via DC01 changes the apparent resolver-side source IP. |
-| Endpoint | [LAB] Windows Security and Sysmon events are collected from WIN01 and DC01; [KOD] Sysmon detections are conservative single-primary-rule classifications. |
-| Ingestion | [KOD] `POST /api/events/ingest` accepts structured source/message/severity/host/raw fields with optional token verification. |
-| Storage | [KOD] SQLite WAL, SHA-256 event fingerprinting and bounded default retention of 50,000 records. |
-| Correlation | [KOD] Network scan candidates, incident construction, AD intelligence, Sysmon enrichment and MITRE mapping. |
-| User interface | [KOD] FastAPI serves the single-page dashboard from `app/templates/index.html`. |
-| AI | [KOD] Ollama is optional, local and constrained by the evidence in the request; AI output is not authoritative. |
-| Identity data | [KOD] Inventory and privilege sidecars; [LAB] Phase 1 shadow comparison and later loopback isolation were validated in the lab. |
+| Ağ segmentasyonu | [LAB] OPNsense PF, bölgeler arası geçişi ve engelleme kurallarını uygular. |
+| IDS | [LAB] Suricata, izlenen trafikten EVE JSON ve imza alarmları üretir; nihai IDS/IPS çalışma modu dışa aktarımla kesinleştirilmelidir. |
+| DNS | [LAB] Unbound sorguları işler ve yapılandırılmış listeleri uygular. Windows istemcisinin DC01 üzerinden DNS kullanması görünür kaynak adresini etkileyebilir. |
+| Uç nokta | [LAB] DC01 ve WIN01 üzerindeki Windows Security ve Sysmon günlükleri collector'larla toplanır. |
+| API | [KOD] `POST /api/events/ingest` ile olay alımı; isteğe bağlı `X-SOC-Token` kontrolü. |
+| Saklama | [KOD] SQLite WAL, SHA-256 olay parmak izi, varsayılan 50.000 olay sınırı. |
+| Tespit | [KOD] Ağ tarama korelasyonu, AD kuralları, Sysmon sınıflandırması, MITRE ve Identity bağlamı. |
+| Görselleştirme | [KOD] `app/templates/index.html` üzerinden sunulan tek sayfalık SOC arayüzü. |
+| AI | [KOD] Opsiyonel yerel Ollama; kanıtın yerini almaz, karar yetkisi yoktur. |
+| Identity | [KOD] AD envanteri ve yetki ilişkileri için ayrı veri katmanları; AD'ye yetki değişikliği yazılmaz. |
 
-## 3. AD logical structure
+![OPNsense genel görünümü](screenshots/opnsense-overview.png)
+
+## 4. Active Directory organizasyon şeması
 
 ```mermaid
 flowchart TB
-  ROOT[corp.local / CORP] --> OU[CORP-Users]
-  OU --> FIN[Finance OU]
-  OU --> HR[HR OU]
-  OU --> IT[IT OU]
-  OU --> MAN[Management OU]
-  OU --> SALES[Sales OU]
-  FIN --> FG[Finance-Users group]
-  HR --> HG[HR-Users group]
-  IT --> IG[IT-Users group]
-  MAN --> MG[Management group]
-  SALES --> SG[Sales-Users group]
-  FG -.-> USER[User accounts<br/>names omitted from public diagram]
-  HG -.-> USER
-  IG -.-> USER
-  MG -.-> USER
-  SG -.-> USER
-  ROOT --> ADM[Built-in privileged groups]
+    DOM[corp.local / CORP] --> OU[CORP-Users]
+    OU --> F[Finance]
+    OU --> H[HR]
+    OU --> I[IT]
+    OU --> M[Management]
+    OU --> S[Sales]
+    F --> FG[Finance-Users]
+    H --> HG[HR-Users]
+    I --> IG[IT-Users]
+    M --> MG[Management-Users]
+    S --> SG[Sales-Users]
+    DOM --> ADM[Yerleşik yetkili AD grupları]
+    FG -.-> U[Kullanıcı hesapları / özel bilgiler gösterilmez]
+    HG -.-> U
+    IG -.-> U
+    MG -.-> U
+    SG -.-> U
 ```
 
-[LAB] The OU categories and departmental group labels are visible in the supplied AD screenshots. [LAB] The diagram intentionally omits individual user names and does not imply that each arrow is a verified membership relationship. [KOD] AEGIS separately models direct, primary and nested group relationships from exported evidence.
+[LAB] Bölümlere ayrılmış OU/grup yapısı AD ekran görüntülerinde görülür. Kesik çizgiler örnek üyelik ilişkilerini açıklamak içindir; her kullanıcı için gerçek üyelik listesi anlamına gelmez. Yetkinin değerlendirilmesinde doğrudan, birincil ve iç içe grup ilişkileri ayrı ele alınır.
 
-![OU structure evidence](screenshots/ad-ou-structure.png)
+![Active Directory OU yapısı](screenshots/ad-ou-structure.png)
 
-## 4. Identity and privilege relationships
+## 5. Identity ve yetki ilişki modeli
 
 ```mermaid
 flowchart LR
-  AD[AD inventory snapshot<br/>aegis.ad_inventory.v2] --> IMP[Inventory import / validation]
-  PRIV[AD privilege evidence] --> IMP2[Privilege sidecar import]
-  IMP --> USERS[(Inventory users)]
-  IMP --> GROUPS[(Inventory groups)]
-  IMP2 --> PU[(priv_users)]
-  IMP2 --> PG[(priv_groups)]
-  IMP2 --> EDGE[(priv_edges)]
-  EDGE --> DIRECT[user_memberof]
-  EDGE --> PRIMARY[user_primarygroup]
-  EDGE --> NESTED[group_memberof]
-  USERS --> U360[User 360]
-  PU --> U360
-  DIRECT --> U360
-  PRIMARY --> U360
-  NESTED --> U360
-  U360 --> RISK[Identity context risk]
-  U360 --> TIME[Behavior timeline]
+    AD[AD envanteri<br/>aegis.ad_inventory.v2] --> VI[Envanter doğrulama ve içe aktarma]
+    PE[AD yetki kanıtı] --> PI[Yetki kanıtı içe aktarma]
+    VI --> IU[(Envanter kullanıcıları / grupları)]
+    PI --> PU[(priv_users)]
+    PI --> PG[(priv_groups)]
+    PI --> ED[(priv_edges)]
+    ED --> DIR[user_memberof]
+    ED --> PRI[user_primarygroup]
+    ED --> NES[group_memberof]
+    IU --> U[User 360]
+    PU --> U
+    PG --> U
+    DIR --> U
+    PRI --> U
+    NES --> U
+    U --> R[Kimlik risk bağlamı]
+    U --> T[Davranış zaman çizelgesi]
 ```
 
-[KOD] The privilege sidecar describes user and group nodes and typed direct, primary-group and group nesting edges. [LAB] Previously reported import/regression checks included 20 users, 57 groups, 15 direct membership links, 20 primary groups and 11 nested memberships in one lab export; these are **snapshot figures**, not universal live counts. [KOD] User 360 and behavior views are derived analytical representations, not Active Directory modification operations.
+[KOD] `priv_edges`, doğrudan üyelik, birincil grup ve grup iç içeliğini farklı ilişki türleri olarak saklar. [LAB] Bir yetki dışa aktarımında 20 kullanıcı, 57 grup, 15 doğrudan üyelik, 20 birincil grup ve 11 iç içe üyelik raporlanmıştı; bunlar **o anki envanter sayılarıdır**, sabit sistem sınırları değildir.
 
-![Identity intelligence example](screenshots/identity-security-intelligence.png)
+![Kimlik ve güvenlik istihbaratı](screenshots/identity-security-intelligence.png)
 
-## 5. Components and control boundaries
+## 6. API ve erişim güvenliği
 
-- **[KOD]** API routes include `/api/events`, `/api/incidents`, `/api/network/detections`, `/api/ad/intelligence`, `/api/sysmon/investigation`, `/api/source-health`, `/api/status`, plus modular MITRE and identity routes.
-- **[KOD]** Optional `SOC_DASHBOARD_USER` and `SOC_DASHBOARD_PASSWORD` enforce HTTP Basic authentication for analyst views; `SOC_INGEST_TOKEN` optionally validates `X-SOC-Token` on the ingest endpoint.
-- **[KOD]** The HTTP middleware adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and no-store for API endpoints.
-- **[KOD]** Loopback-limited identity/privilege endpoints are isolated from the broad dashboard network exposure. **[LAB]** Identity shadow and import isolation tests were completed before promoting experimental views.
-- **[KOD]** Environment configuration includes `SOC_MONITORED_NETWORKS` (defaults to `10.10.0.0/16`), `SOC_MAX_EVENTS` (defaults to `50000`), `SOC_DB_PATH`, and `AEGIS_MITRE_V2`.
-- **[LAB]** Management LAN binding `192.168.1.111:8088` was used only inside the authorized test network. Do not create a public NAT forward to the SOC API.
+[KOD] Uygulamada `/api/events`, `/api/incidents`, `/api/network/detections`, `/api/ad/intelligence`, `/api/sysmon/investigation`, `/api/source-health`, `/api/status` ve Identity/MITRE alt uçları bulunur. İsteğe bağlı HTTP Basic Auth, `SOC_DASHBOARD_USER` / `SOC_DASHBOARD_PASSWORD` ile; ingest token ise `SOC_INGEST_TOKEN` ile yapılandırılır.
 
-## 6. Architectural constraints
+[KOD] Güvenlik başlıkları arasında `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` ve API önbelleklemesini önleyici başlıklar yer alır. Identity/privilege uçları için yerel erişim kısıtları uygulanmıştır. [LAB] SOC, özel yönetim ağı için yayınlandı; internete açık bir port yönlendirmesi bu kurulumun parçası değildir.
 
-[KOD] The application's passive logic cannot confirm the real-world effectiveness of firewall policy or source sensor coverage without the original logs. [KOD] A single `BLOCK` event is not automatically a threat-intelligence block; a single `NXDOMAIN` is not a verified DNS blacklist decision; a possible port scan is not proof of intrusion. [LAB] Sysmon events 8/10/25 have configured collection paths, but the lab intentionally did not produce live malicious-behavior confirmations for those three rules.
+## 7. Kısıtlar ve doğrulama notları
 
-### Reproduction TODOs
+[LAB] WIN01 Sysmon tarafında sekiz farklı kural gerçek olaylarla doğrulandı; LSASS odaklı ID 8/10 ile process tampering ID 25 için canlı saldırı temelli tespit testi tamamlanmadı. [KOD] Tek bir `BLOCK` kaydı otomatik olarak kara liste eşleşmesi sayılmaz ve tek bir `NXDOMAIN`, DNS blocklist kararı olarak yorumlanmaz.
 
-<!-- TODO: OPNsense version, WAN adapter mapping, exact em5 netmask and VM hypervisor release -->
-<!-- TODO: approved PF rule UUID register and full ordered firewall export -->
-<!-- TODO: latest identity snapshot schema and installed MITRE technique counts -->
+<!-- TODO: OPNsense sürümü, WAN/em0/em1 eşlemesi ve em5 ağ maskesinin güncel ekran görüntüsü -->
+<!-- TODO: tüm PF kural UUID'lerini içeren maskelenmiş kural dökümü -->
+<!-- TODO: kullanılan en son MITRE modülünün kesin teknik sayısı ve son envanter tarihi -->

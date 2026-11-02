@@ -1,122 +1,156 @@
-# Screenshot inventory
+# AEGIS SOC — Ekran görüntüleri ve görsel kanıt kataloğu
 
-This gallery lists **all screenshots included in the documentation bundle**. The goal is to make it clear that the repository contains not just dashboard images, but also the **lab build evidence**: VirtualBox adapters, OPNsense pages, AD structure, Identity screens, SOC views and host/network validation snippets.
+Bu katalog, GitHub deposuna eklenen **39 gerçek laboratuvar ekran görüntüsünün tamamını** listeler. Görseller sadece Dashboard'a ait değildir: VirtualBox adaptörleri, OPNsense arayüzleri, firewall kural ve logları, Unbound, Active Directory, Identity ve Sysmon da yer alır.
 
-## 1. Virtual machine and network build evidence
+**[LAB]** Bu dosyalar kullanıcı tarafından sağlanan laboratuvar görüntüleridir. Ekrandaki olay veya IP'nin görünmesi, ayrıca doğrulanmadıkça o olayın kötü amaçlı olduğunu kanıtlamaz. Orijinal yazılım arayüzlerindeki İngilizce teknik etiketler görüntü üzerinde korunmuş, belge açıklamaları Türkçe yazılmıştır.
 
-| File | Description |
+## 1. Sanal makine ve ağ kurulum kanıtları
+
+| Görsel | Açıklama |
 |---|---|
-| `virtualbox-opnsense-network.png` | [LAB] VirtualBox network adapter view for the OPNsense VM. |
-| `virtualbox-dc01-network.png` | [LAB] VirtualBox network adapter view for DC01. |
-| `virtualbox-win01-network.png` | [LAB] VirtualBox network adapter view for WIN01. |
-| `virtualbox-kali-network.png` | [LAB] VirtualBox network adapter view for Kali. |
-| `network-lab-topology.png` | [LAB] Lab topology diagram/dashboard view showing main nodes and relationships. |
-| `dc01-ipconfig.png` | [LAB] Windows IP configuration snippet from the domain controller side. |
-| `kali-routing-table.png` | [LAB] Route table / interface validation on Kali. |
+| [`virtualbox-opnsense-network.png`](virtualbox-opnsense-network.png) | [LAB] OPNsense sanal makinesinin ağ adaptörleri |
+| [`virtualbox-dc01-network.png`](virtualbox-dc01-network.png) | [LAB] DC01 sanal makinesinin ağ adaptörü |
+| [`virtualbox-win01-network.png`](virtualbox-win01-network.png) | [LAB] WIN01 sanal makinesinin ağ adaptörü |
+| [`virtualbox-kali-network.png`](virtualbox-kali-network.png) | [LAB] Kali sanal makinesinin ağ adaptörü |
+| [`network-lab-topology.png`](network-lab-topology.png) | [LAB] AEGIS laboratuvarının ağ topolojisi |
+| [`dc01-ipconfig.png`](dc01-ipconfig.png) | [LAB] DC01 üzerinden IP yapılandırması doğrulaması |
+| [`kali-routing-table.png`](kali-routing-table.png) | [LAB] Kali yönlendirme tablosu |
 
-## 2. OPNsense build and validation
+![OPNsense sanal makinesinin ağ adaptörleri](virtualbox-opnsense-network.png)
 
-| File | Description |
+![DC01 sanal makinesinin ağ adaptörü](virtualbox-dc01-network.png)
+
+![WIN01 sanal makinesinin ağ adaptörü](virtualbox-win01-network.png)
+
+![Kali sanal makinesinin ağ adaptörü](virtualbox-kali-network.png)
+
+![AEGIS laboratuvarının ağ topolojisi](network-lab-topology.png)
+
+![DC01 üzerinden IP yapılandırması doğrulaması](dc01-ipconfig.png)
+
+![Kali yönlendirme tablosu](kali-routing-table.png)
+
+## 2. OPNsense yapılandırması, firewall ve DNS
+
+| Görsel | Açıklama |
 |---|---|
-| `opnsense-interface-assignments.png` | [LAB] Interface assignment/navigation view. |
-| `opnsense-services-status.png` | [LAB] Service/status view used during firewall/DNS build validation. |
-| `opnsense-overview.png` | [LAB] OPNsense overview page with system summary. |
-| `opnsense-rule-config.png` | [LAB] Firewall rule configuration page. |
-| `opnsense-firewall-liveview.png` | [LAB] Live firewall log view. |
-| `opnsense-firewall-log-detail.png` | [LAB] Detailed firewall log entry view. |
-| `opnsense-unbound-monitoring.png` | [LAB] Unbound monitoring/statistics page. |
-| `opnsense-unbound-details.png` | [LAB] Additional Unbound/blocklist detail page. |
-| `opnsense-dashboard-final.png` | [LAB] Final OPNsense dashboard / landing view. |
+| [`opnsense-interface-assignments.png`](opnsense-interface-assignments.png) | [LAB] OPNsense arayüz/bölge atamaları |
+| [`opnsense-services-status.png`](opnsense-services-status.png) | [LAB] OPNsense servis ve çalışma durumu |
+| [`opnsense-overview.png`](opnsense-overview.png) | [LAB] OPNsense sistem genel görünümü |
+| [`opnsense-rule-config.png`](opnsense-rule-config.png) | [LAB] Firewall kural yapılandırma ekranı |
+| [`opnsense-firewall-liveview.png`](opnsense-firewall-liveview.png) | [LAB] Canlı firewall olay kayıtları |
+| [`opnsense-firewall-log-detail.png`](opnsense-firewall-log-detail.png) | [LAB] Tekil firewall olayının ayrıntısı |
+| [`opnsense-unbound-monitoring.png`](opnsense-unbound-monitoring.png) | [LAB] Unbound DNS izleme ve istatistikleri |
+| [`opnsense-unbound-details.png`](opnsense-unbound-details.png) | [LAB] Unbound sorgu / engel inceleme ekranı |
+| [`opnsense-dashboard-final.png`](opnsense-dashboard-final.png) | [LAB] Son OPNsense Dashboard görünümü |
 
-## 3. Active Directory structure
+![OPNsense arayüz/bölge atamaları](opnsense-interface-assignments.png)
 
-| File | Description |
+![OPNsense servis ve çalışma durumu](opnsense-services-status.png)
+
+![OPNsense sistem genel görünümü](opnsense-overview.png)
+
+![Firewall kural yapılandırma ekranı](opnsense-rule-config.png)
+
+![Canlı firewall olay kayıtları](opnsense-firewall-liveview.png)
+
+![Tekil firewall olayının ayrıntısı](opnsense-firewall-log-detail.png)
+
+![Unbound DNS izleme ve istatistikleri](opnsense-unbound-monitoring.png)
+
+![Unbound sorgu / engel inceleme ekranı](opnsense-unbound-details.png)
+
+![Son OPNsense Dashboard görünümü](opnsense-dashboard-final.png)
+
+## 3. Active Directory organizasyon birimleri
+
+| Görsel | Açıklama |
 |---|---|
-| `ad-ou-structure.png` | [LAB] Top-level OU / group structure snapshot. |
-| `ad-finance-ou.png` | [LAB] Finance OU and group membership view. |
-| `ad-hr-ou.png` | [LAB] HR OU and group membership view. |
-| `ad-it-ou.png` | [LAB] IT OU and group membership view. |
-| `ad-management-ou.png` | [LAB] Management OU and group membership view. |
-| `ad-sales-ou.png` | [LAB] Sales OU and group membership view. |
+| [`ad-ou-structure.png`](ad-ou-structure.png) | [LAB] CORP-Users OU yapısı |
+| [`ad-finance-ou.png`](ad-finance-ou.png) | [LAB] Finance birimi ve grup görünümü |
+| [`ad-hr-ou.png`](ad-hr-ou.png) | [LAB] HR birimi ve grup görünümü |
+| [`ad-it-ou.png`](ad-it-ou.png) | [LAB] IT birimi ve grup görünümü |
+| [`ad-management-ou.png`](ad-management-ou.png) | [LAB] Management birimi ve grup görünümü |
+| [`ad-sales-ou.png`](ad-sales-ou.png) | [LAB] Sales birimi ve grup görünümü |
 
-## 4. Identity and privilege analysis
+![CORP-Users OU yapısı](ad-ou-structure.png)
 
-| File | Description |
+![Finance birimi ve grup görünümü](ad-finance-ou.png)
+
+![HR birimi ve grup görünümü](ad-hr-ou.png)
+
+![IT birimi ve grup görünümü](ad-it-ou.png)
+
+![Management birimi ve grup görünümü](ad-management-ou.png)
+
+![Sales birimi ve grup görünümü](ad-sales-ou.png)
+
+## 4. Identity ve yetki incelemesi
+
+| Görsel | Açıklama |
 |---|---|
-| `identity-ad-intelligence.png` | [KOD]/[LAB] Identity · AD Intelligence main workspace. |
-| `identity-users-list.png` | [KOD]/[LAB] Identity users list. |
-| `identity-security-intelligence.png` | [KOD]/[LAB] Identity security workspace. |
-| `identity-privilege-memberships.png` | [KOD]/[LAB] Verified AD privilege/group membership view. |
-| `identity-user360-profile.png` | [KOD]/[LAB] User360 profile-style view. |
-| `identity-user360-risk-analysis.png` | [KOD]/[LAB] User360 risk-analysis view. |
-| `soc-identity-user360-summary.png` | [KOD]/[LAB] Additional compact user summary card. |
-| `soc-identity-details.png` | [KOD]/[LAB] Detailed identity evidence panel in the SOC. |
+| [`identity-ad-intelligence.png`](identity-ad-intelligence.png) | [LAB] Identity · AD Intelligence ana ekranı |
+| [`identity-users-list.png`](identity-users-list.png) | [LAB] AD kullanıcı listesi |
+| [`identity-security-intelligence.png`](identity-security-intelligence.png) | [LAB] Identity güvenlik inceleme görünümü |
+| [`identity-privilege-memberships.png`](identity-privilege-memberships.png) | [LAB] Doğrudan ve iç içe yetki üyelikleri |
+| [`identity-user360-profile.png`](identity-user360-profile.png) | [LAB] User 360 profil görünümü |
+| [`identity-user360-risk-analysis.png`](identity-user360-risk-analysis.png) | [LAB] Kimlik risk bağlamı incelemesi |
+| [`soc-identity-user360-summary.png`](soc-identity-user360-summary.png) | [LAB] Kullanıcı 360 özet görünümü |
+| [`soc-identity-details.png`](soc-identity-details.png) | [LAB] SOC kimlik olay ayrıntısı |
 
-## 5. Sysmon and endpoint analysis
+![Identity · AD Intelligence ana ekranı](identity-ad-intelligence.png)
 
-| File | Description |
+![AD kullanıcı listesi](identity-users-list.png)
+
+![Identity güvenlik inceleme görünümü](identity-security-intelligence.png)
+
+![Doğrudan ve iç içe yetki üyelikleri](identity-privilege-memberships.png)
+
+![User 360 profil görünümü](identity-user360-profile.png)
+
+![Kimlik risk bağlamı incelemesi](identity-user360-risk-analysis.png)
+
+![Kullanıcı 360 özet görünümü](soc-identity-user360-summary.png)
+
+![SOC kimlik olay ayrıntısı](soc-identity-details.png)
+
+## 5. Sysmon ve uç nokta incelemesi
+
+| Görsel | Açıklama |
 |---|---|
-| `sysmon-endpoint-overview.png` | [KOD]/[LAB] Endpoint · Sysmon landing page. |
-| `sysmon-process-investigation.png` | [KOD]/[LAB] Process investigation view. |
-| `sysmon-analysis-detail.png` | [KOD]/[LAB] Detail / AI-style analysis panel for a selected process event. |
+| [`sysmon-endpoint-overview.png`](sysmon-endpoint-overview.png) | [LAB] Sysmon uç nokta genel görünümü |
+| [`sysmon-process-investigation.png`](sysmon-process-investigation.png) | [LAB] Süreç inceleme ağacı ve kanıtlar |
+| [`sysmon-analysis-detail.png`](sysmon-analysis-detail.png) | [LAB] Sysmon olay inceleme ayrıntısı |
 
-## 6. SOC dashboard views
+![Sysmon uç nokta genel görünümü](sysmon-endpoint-overview.png)
 
-| File | Description |
+![Süreç inceleme ağacı ve kanıtlar](sysmon-process-investigation.png)
+
+![Sysmon olay inceleme ayrıntısı](sysmon-analysis-detail.png)
+
+## 6. SOC Dashboard ve test kayıtları
+
+| Görsel | Açıklama |
 |---|---|
-| `soc-security-command-center.png` | [KOD]/[LAB] Main SOC command center. |
-| `soc-all-logs.png` | [KOD]/[LAB] All Logs page. |
-| `soc-network-detail.png` | [KOD]/[LAB] Network detection detail screen. |
-| `soc-network-logs.png` | [KOD]/[LAB] Network log listing / evidence screen. |
-| `soc-network-detection-summary.png` | [KOD]/[LAB] Supporting network summary table / compact detection evidence view. |
-| `soc-cli-validation-output.png` | [LAB] CLI validation / terminal evidence snippet used during project verification. |
+| [`soc-security-command-center.png`](soc-security-command-center.png) | [LAB] AEGIS Güvenlik Komuta Merkezi |
+| [`soc-all-logs.png`](soc-all-logs.png) | [LAB] Tüm log kayıtları ekranı |
+| [`soc-network-detail.png`](soc-network-detail.png) | [LAB] Network tespit olay ayrıntısı |
+| [`soc-network-logs.png`](soc-network-logs.png) | [LAB] Network log listesi |
+| [`soc-network-detection-summary.png`](soc-network-detection-summary.png) | [LAB] Ağ tespitleri özeti |
+| [`soc-cli-validation-output.png`](soc-cli-validation-output.png) | [LAB] Terminalde gerçekleştirilen test doğrulaması |
 
-## 7. Quick gallery
+![AEGIS Güvenlik Komuta Merkezi](soc-security-command-center.png)
 
-### Virtualization and layout
+![Tüm log kayıtları ekranı](soc-all-logs.png)
 
-![VirtualBox OPNsense](virtualbox-opnsense-network.png)
-![VirtualBox DC01](virtualbox-dc01-network.png)
-![VirtualBox WIN01](virtualbox-win01-network.png)
-![VirtualBox Kali](virtualbox-kali-network.png)
+![Network tespit olay ayrıntısı](soc-network-detail.png)
 
-### OPNsense
+![Network log listesi](soc-network-logs.png)
 
-![Interfaces](opnsense-interface-assignments.png)
-![Services](opnsense-services-status.png)
-![Overview](opnsense-overview.png)
-![Rules](opnsense-rule-config.png)
-![Firewall live](opnsense-firewall-liveview.png)
-![Firewall detail](opnsense-firewall-log-detail.png)
-![Unbound monitoring](opnsense-unbound-monitoring.png)
-![Unbound details](opnsense-unbound-details.png)
-![OPNsense dashboard](opnsense-dashboard-final.png)
+![Ağ tespitleri özeti](soc-network-detection-summary.png)
 
-### Active Directory / Identity
+![Terminalde gerçekleştirilen test doğrulaması](soc-cli-validation-output.png)
 
-![OU structure](ad-ou-structure.png)
-![Finance](ad-finance-ou.png)
-![HR](ad-hr-ou.png)
-![IT](ad-it-ou.png)
-![Management](ad-management-ou.png)
-![Sales](ad-sales-ou.png)
-![AD Intelligence](identity-ad-intelligence.png)
-![Identity users](identity-users-list.png)
-![Identity workspace](identity-security-intelligence.png)
-![Privilege memberships](identity-privilege-memberships.png)
-![User360 profile](identity-user360-profile.png)
-![Risk analysis](identity-user360-risk-analysis.png)
-![Identity summary](soc-identity-user360-summary.png)
-![Identity details](soc-identity-details.png)
+## Görselleri yayınlarken
 
-### SOC / Sysmon
-
-![Sysmon overview](sysmon-endpoint-overview.png)
-![Sysmon process investigation](sysmon-process-investigation.png)
-![Sysmon detail](sysmon-analysis-detail.png)
-![Command center](soc-security-command-center.png)
-![All logs](soc-all-logs.png)
-![Network detail](soc-network-detail.png)
-![Network logs](soc-network-logs.png)
-![Network summary](soc-network-detection-summary.png)
-![CLI validation](soc-cli-validation-output.png)
+[LAB] Ekran görüntülerini herkese açık depoda kullanmadan önce kullanıcı adları, SID, IP adresleri ve diğer hassas ayrıntılar bakımından ayrıca incelemek gerekir. Dosyaların adlarını değiştirmeden kullanmak, README ve teknik dökümanlardaki bağlantıların çalışmasını sağlar.

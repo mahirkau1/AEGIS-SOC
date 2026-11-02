@@ -1,24 +1,27 @@
-# GitHub release checklist — AEGIS SOC
+# AEGIS SOC — GitHub yayın öncesi kontrol listesi
 
-> This release contains **documentation and selected screenshot assets only**. It **does not replace** the working SOC application, Windows collectors or Kali systemd services.
+> Bu belge paketi **yalnızca dokümantasyon ve kullanıcı tarafından sağlanan görselleri** içerir. Uygulama kodunu, Windows collector'larını, Kali servislerini, `.gitignore` veya `requirements.txt` dosyalarını otomatik olarak değiştirmez.
 
-## A. What this bundle contains
+## 1. Pakette bulunanlar
 
-- [LAB] `README.md` — English portfolio front page.
-- [LAB] `README.tr.md` — Turkish equivalent.
-- [LAB] `docs/architecture.md`, `docs/opnsense-setup.md`, `docs/active-directory-setup.md`, `docs/blocklists.md`, `docs/detections.md`, `docs/data-flow.md`.
-- [LAB] `docs/screenshots/` — curated user-supplied screenshots and index.
-- [LAB] `docs/publication-checklist.md` — release checks.
-- [LAB] `scripts/Publish-AegisDocs.ps1` — local copy, backup, stage, commit and optional push for exactly this documentation bundle.
+- [x] `README.md`: tamamen Türkçe ana GitHub vitrini
+- [x] `README.tr.md`: Türkçe alternatif giriş dosyası
+- [x] `docs/lab-build-walkthrough.md`: VirtualBox'tan Dashboard'a ayrıntılı kurulum hikâyesi
+- [x] `docs/architecture.md`: ağ ve güven sınırları
+- [x] `docs/opnsense-setup.md`: OPNsense, firewall, Suricata, Unbound ve collector
+- [x] `docs/active-directory-setup.md`: DC01, WIN01, GPO, Sysmon ve Identity
+- [x] `docs/blocklists.md`: IP ve DNS kara listeleri
+- [x] `docs/detections.md`: network, AD, Sysmon ve Identity kuralları
+- [x] `docs/data-flow.md`: olay alımı, depolama ve API
+- [x] `docs/screenshots/README.md`: **39 görselin tamamının** Türkçe kataloğu
+- [x] `scripts/Publish-AegisDocs.ps1`: sınırlı ve yedeklemeli GitHub yayın betiği
 
-## B. Check `.gitignore` before pushing
+## 2. `.gitignore` denetimi
 
-[KOD] The attached application source snapshot stores SQLite data below `data/` by default and accepts secrets via environment variables. This means a public repository must avoid committing working databases, local environment files, logs and private backups. [LAB] Inspect the existing `.gitignore` rather than overwriting it with an unreviewed template.
-
-Recommended patterns **to merge into the repository's existing `.gitignore` only if absent**:
+[KOD] Uygulama yerel SQLite ve ortam değişkenleri kullandığından kişisel loglar, tokenlar ve veritabanı dosyaları genel repoya konulmamalıdır. Mevcut `.gitignore` üzerine düşünmeden yazmayın; aşağıdaki kalıpların eksik olup olmadığını kontrol edin.
 
 ```gitignore
-# Local secrets / environment
+# Ortam değişkenleri ve sırlar
 .env
 .env.*
 !.env.example
@@ -27,7 +30,7 @@ Recommended patterns **to merge into the repository's existing `.gitignore` only
 *.pfx
 *.p12
 
-# Python / IDE / local env
+# Python ve geliştirme ortamı
 .venv/
 venv/
 __pycache__/
@@ -37,7 +40,7 @@ __pycache__/
 .vscode/
 .idea/
 
-# Runtime / operational evidence / local backups
+# Çalışma zamanı verileri ve özel yedekler
 *.sqlite
 *.sqlite3
 *.sqlite3-wal
@@ -50,16 +53,13 @@ data/
 output/
 *.bak
 *.bak_*
-
-# Optional local output
-*.zip
 ```
 
-[LAB] `.env.example` is allowed to be public only when its values are placeholders. **Do not use `git add -f` to override an ignored secret.** Repo-local documentation images remain unignored.
+[LAB] Resmî `.env.example` kullanılıyorsa sadece örnek değerler içermelidir. `git add -f` ile gizlenmiş sırları zorla depoya eklemeyin.
 
-## C. Validate dependency metadata
+## 3. Bağımlılık kontrolü
 
-[LAB] The dependency list supplied for review was:
+[LAB] Proje için belirtilmiş başlıca Python paketleri:
 
 ```text
 fastapi
@@ -72,59 +72,61 @@ python-dotenv
 python-multipart
 ```
 
-[LAB] This is a **review list, not a claim that every name is imported by the supplied source snapshot**. Keep the existing `requirements.txt`, check its content and ensure it matches current imports (`app/main.py`, optional identity/MITRE modules, Windows/Kali collectors and optional Ollama integration). Versions should be tested/pinned by the repository owner; no versions have been invented for this release.
+Bu bir inceleme listesidir; kurulu sürüm ya da her paketin her dosyada kullanıldığı iddiası değildir. Mevcut `requirements.txt`, uygulamanın kullanılan son kaynak koduyla karşılaştırılmalıdır.
 
 ```powershell
-# Run from the existing repository root
+# Var olan Git deposunda salt-okunur kontrol
 Get-Content .gitignore
 Get-Content requirements.txt
 .\.venv\Scripts\python.exe -m pip check
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-## D. Secret and publication hygiene
+## 4. Gizli bilgileri koruma
 
 ```powershell
-# Review what is being staged (read-only)
+# Yayın öncesi dosyaları ve boşluk hatalarını denetle
 git status --short
 git diff --cached --stat
 git diff --cached --check
 
-# Search names of potentially sensitive files; inspect results manually
+# İncelenmesi gereken şüpheli dosya adlarını listele
 Get-ChildItem -Recurse -File -Force |
   Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' -and $_.Name -match '(?i)\.env|token|secret|password|credential|\.sqlite|\.pfx|\.pem' } |
   Select-Object -First 30 FullName
 ```
 
-[LAB] Do not commit actual IP blacklists with unidentified provenance, raw event logs, private SIDs, screenshots with tokens, or machine-specific desktop paths. `192.168.x.x` and `10.x.x.x` values in documentation are **lab addresses**; `198.51.100.77` is a reserved test address.
+[LAB] Gerçek parola/token, özel kimlik SID'leri, ham kullanıcı olay günlükleri veya tam güvenlik duvarı yedeği depoya konulmamalıdır. `198.51.100.77` ayrılmış TEST-NET-2 test adresidir; 10.x ve 192.168.x adresleri laboratuvar özel ağlarını anlatır.
 
-## E. Verify the diagrams and links
+## 5. GitHub görünüm kontrolü
 
-- [LAB] GitHub Mermaid should render all **seven required concepts**: topology, log pipeline, AD structure, IP blacklist, DNS blacklist, detection flow and identity/privilege model.
-- [LAB] Confirm README image links load on GitHub. The guide uses relative paths, so it works regardless of repository owner or branch.
-- [LAB] Review every screenshot at full size for private information before pushing.
-- [LAB] All eight requested primary Markdown files are present; additional guides are supporting material.
-- [LAB] Check `LICENSE` and use the exact license already in the repository. If none exists, obtain the owner's selection; do not invent MIT/Apache terms.
+- [ ] `README.md` tamamen Türkçe okunuyor.
+- [ ] Mermaid diyagramları GitHub üzerinde hatasız görünüyor.
+- [ ] OPNsense, VirtualBox, AD, Sysmon, Identity ve SOC görselleri açılıyor.
+- [ ] `docs/screenshots` altında 39 PNG bulunuyor.
+- [ ] README ve teknik dokümanlardaki göreli bağlantılar çalışıyor.
+- [ ] Son commit yalnızca belgeleri/görselleri güncelliyor; çalışan uygulama dosyalarına dokunmuyor.
+- [ ] `LICENSE` dosyası varsa gerçek lisansla uyuşuyor. Yoksa rastgele lisans iddia edilmiyor.
 
-## F. What is verified, and what needs export for exact rebuilding?
+## 6. Proje doğrulama sınırı
 
-| Status | Item |
+| Durum | Açıklama |
 |---|---|
-| [KOD] Verified in supplied Python snapshots | FastAPI ingest, SQLite WAL and SHA-256, network thresholds, Sysmon 11-rule engine, selected AD/identity APIs and parsing. |
-| [LAB] Reported/observed | OPNsense segmentation, DC01/WIN01/Kali addresses, active Sysmon alerts, PF test block and screenshot evidence. |
-| [LAB] Known limitation | Unbound collector does not forward definitive block decision; SOC confirmed DNS block counter is therefore unavailable. |
-| [LAB] Deliberate validation boundary | Sysmon ID 8/10/25 were not live-triggered with invasive LSASS/tampering behavior. |
-| TODO | OPNsense release and WAN assignment; exact DHCP pool, Unbound feeds, ordered PF UUIDs, Suricata mode/categories, GPO export, Sysmon source and latest branch/requirements/license. |
+| [KOD] Kaynak kodunda görüldü | FastAPI ingest, SQLite WAL, SHA-256, ağ eşikleri, Sysmon V3 kuralları, AD/Identity analizleri |
+| [LAB] Canlı laboratuvarda görüldü | Subnet ayrımı, OPNsense engelleri, Kali/Suricata logları, WIN01 Sysmon'un 8 alarmı |
+| [LAB] Canlı olarak ayrıca doğrulanmadı | Sysmon ID 8, 10, 25 için yüksek riskli saldırı temelli alarmlar |
+| [KOD] Bilinen veri sınırı | Unbound blocklist'in açık karar alanı SOC collector'ından tam gelmiyor |
+| TODO | Tam WAN eşlemesi, son firewall UUID dökümü, Suricata modu, DHCP havuzu, feed listesi ve GPO exportu |
 
-## Eksik Bilgiler / Information needed for exact reproduction
+## 7. Yeniden kurulum için ek kanıt gerektiren bilgiler
 
-1. [LAB] **OPNsense:** Version, current WAN/em0/em1 mapping, authoritative interface mask for em5, backup/redacted interface export.
-2. [LAB] **Services:** KEA DHCP ranges/reservations and exact Windows/Unbound DNS forwarding configuration.
-3. [LAB] **Firewall:** Complete ordered PF rule table, aliases and UUID allow-register (redacted).
-4. [LAB] **IP/DNS feeds:** Exact origin/source URLs, usage permissions and refresh schedule (do not assume any feed name).
-5. [LAB] **Suricata:** IDS/IPS mode, observed interface, installed/enabled rules and update schedule.
-6. [LAB] **Windows AD:** Redacted GPO inventory, audit subcategories, account/group privilege-purpose table.
-7. [LAB] **Sysmon:** Provenance and current XML revision per host; actual collector source and delivery schedule.
-8. [LAB] **Repository:** Current requirements, default branch, verified LICENSE, screenshots cleared for release.
+1. OPNsense'in güncel sürümü ve WAN/em0/em1 adaptör eşlemesi.
+2. KEA DHCP adres havuzları ve Unbound yönlendirme ayarları.
+3. Firewall kurallarının sıralı dökümü, alias adları ve PF UUID listesi.
+4. IP/DNS blocklist besleme kaynakları ve güncelleme periyotları.
+5. Suricata'nın IDS/IPS modu, aktif arayüz ve kural kategorileri.
+6. GPO denetim alt kategorileri ve grup yetkilerinin gizli bilgilerden arındırılmış dökümü.
+7. Host başına güncel Sysmon XML ve collector çalışma şekli.
+8. Yayınlanan kod sürümüyle `requirements.txt`, `LICENSE` ve son test raporunun eşleşmesi.
 
-[LAB] These are reproducibility/evidence TODOs, **not claims that the live laboratory failed**. The project can be presented as a completed learning/portfolio implementation with honest boundaries.
+**Bu liste, laboratuvarın çalışmadığını değil, aynı ortamı bağımsız biçimde birebir yeniden kurmak için hangi ek kanıtlara ihtiyaç duyulduğunu gösterir.**
