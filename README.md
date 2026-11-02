@@ -1,186 +1,162 @@
-# AEGIS SOC — Active Directory, OPNsense & Suricata Security Lab
+# AEGIS SOC
 
-**Segmentlere ayrılmış kurumsal ağ • Active Directory güvenliği • IDS/IPS gözlemlenebilirliği • Detection Engineering • Yerel SOC ve AI analizi**
+**Active Directory · OPNsense · Suricata · Sysmon · MITRE ATT&CK · Local AI**
 
-> **Proje durumu (24 Ekim 2026):** Geliştirme ve doğrulama laboratuvarı. Bu depo başlangıçta dokümantasyon odaklı hazırlanmıştır; çalışır uygulamanın tüm kaynak kodları henüz yayımlanmamıştır. Belgelenen çalışmalar gerçek laboratuvar oturumlarına dayanır; bazı güvenlik kontrollerinin en son konfigürasyonu ve bazı tespit senaryoları hâlâ yeniden doğrulanmalıdır.
+> A hands-on security operations laboratory: from network and identity telemetry to explainable detection, investigation, and evidence-led triage. **AEGIS monitors and analyzes; it does not automatically block traffic or remediate hosts.**
 
-## Projenin hikâyesi
+![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white) ![OPNsense](https://img.shields.io/badge/Firewall-OPNsense-E95420) ![Suricata](https://img.shields.io/badge/NIDS-Suricata-C73532) ![MITRE](https://img.shields.io/badge/Mapping-MITRE%20ATT%26CK-555555) ![Status](https://img.shields.io/badge/Scope-Lab%20Validated-286E4F)
 
-AEGIS SOC yalnızca log gösteren bir web paneli değildir. Projede **sanal bir kurum altyapısı** tasarlanmış, farklı güvenlik bölgelerine ayrılmış, Windows Server üzerinde **Active Directory domain** kurulmuş, Windows 11 istemcisi bu domaine alınmış, **OPNsense ile ağ erişimi sınırlandırılmış**, **Suricata ile ağ trafiği izlenmiş**, Windows Security/Sysmon kayıtları merkezi bir SOC'a taşınmış ve kontrollü Kali testleriyle bu zincirin çalıştığı sınanmıştır.
+**[Türkçe README](README.tr.md) · [Architecture](docs/architecture.md) · [Detection catalog](docs/detections.md) · [Data flow](docs/data-flow.md) · [Screenshots](docs/screenshots/README.md)**
 
-Amaç; bir güvenlik analistinin hem **koruyucu kontrolleri** (GPO, hesap kısıtları, firewall kuralları, segmentasyon) hem de **tespit ve inceleme katmanını** (IDS, log toplama, korelasyon, MITRE, kanıt temelli raporlama) tek laboratuvarda deneyebilmesidir.
+![AEGIS command center](docs/screenshots/soc-security-command-center.png)
 
-### Uçtan uca neler yaptık?
+## Why I built it
 
-1. **OPNsense ile dört laboratuvar ağı oluşturarak bölümleri ayırdık.** Kullanıcılar, sunucular, DMZ ve güvenlik/test makineleri farklı alt ağlarda konumlandırıldı.
-2. **Firewall erişimlerini ihtiyaca göre sıkılaştırdık.** USERS ağının domain hizmetleriyle çalışabilmesi korunurken DMZ/SECURITY gibi diğer iç ağlara erişimi sınırlandı; izin verilen ve engellenen trafik test edildi.
-3. **Windows Server 2019 üzerinde `corp.local` domain ortamını kurduk.** `DC01` domain controller olarak yapılandırıldı; DNS, kimlik doğrulama ve etki alanı işlevleri test edildi.
-4. **Windows 11 `WIN01` istemcisini domaine aldık.** Domain hesabıyla oturum açma, güvenli kanal, `gpupdate`, DC'ye DNS ve SMB erişimi test edildi.
-5. **AD güvenlik politikaları ve denetim kayıtlarına odaklandık.** GPO ile Windows güvenlik duvarı profilleri, hesap/grup olaylarının denetlenmesi, kullanıcıların oturum açabileceği iş istasyonu kısıtları ve erişim izinleri üzerinde çalışıldı.
-6. **Suricata IDS/IPS yapılandırması ve kurallarıyla test trafiğini görünür hale getirdik.** Standart GPL/ET imzaları ve laboratuvar için özel `KALI SECURITY TEST` alarmları işlendi; bunun gerçek bir engelleme kanıtı olmadığı ayrıca belirtildi.
-7. **Firewall + Suricata + AD + Sysmon loglarını merkezi SOC'a taşıdık.** FastAPI, normalizasyon, depolama ve dashboard üzerinden olaylar izlendi.
-8. **Kali Linux ile kontrollü güvenlik testleri yaptık.** TCP/UDP, DNS, SMB, RDP, Kerberos, LDAP ve ICMP senaryolarından telemetri toplandı; MITRE ve ağ tespit modülleri geliştirildi.
+[LAB] I built AEGIS to understand what actually happens **between a suspicious action, the telemetry that captures it, and the analyst who investigates it**. The project connects a segmented Active Directory network, OPNsense firewall logs, Suricata alerts, Unbound DNS activity, Windows Security events, and Sysmon process evidence. [KOD] A FastAPI backend normalizes and stores those records, applies conservative detection logic, correlates selected activity, and presents the evidence through a web dashboard. AI-assisted interpretation is optional; the recorded evidence remains the source of truth.
 
-## Laboratuvar topolojisi
-
-```mermaid
-flowchart TB
-    K["Kali Linux · yetkili test makinesi"]
-    W["WIN01 · Windows 11 · Sysmon · domain üyesi"]
-    DC["DC01 · Windows Server 2019 · AD DS / DNS"]
-    DMZ["DMZ test ağı"]
-    FW["OPNsense · Firewall / routing / Suricata"]
-    C["Syslog / collector"]
-    API["AEGIS SOC · FastAPI · SQLite"]
-    D["Dashboard · Detection / MITRE / AI"]
-    W -->|USERS| FW
-    DC -->|SERVERS| FW
-    DMZ --> FW
-    K -->|SECURITY| FW
-    FW -->|filterlog + Suricata| C
-    C -->|event ingest| API
-    W -.->|Sysmon olayları| API
-    DC -.->|Windows Security / AD olayları| API
-    API --> D
-```
-
-> Bu şema **mantıksal ağ yapısını ve log akışını** gösterir; tüm bağlantıların birebir kablolama/route haritası değildir. Windows olaylarının aktarım yöntemi kolektör/sürüm bazında değişebilir.
-
-| OPNsense arayüzü | Bölge | Laboratuvar alt ağı | Rol |
-|---|---|---|---|
-| `em2` | USERS | `10.10.20.0/24` | Domain üyesi istemciler, WIN01 |
-| `em3` | SERVERS | `10.10.30.0/24` | DC01, Active Directory / DNS |
-| `em4` | DMZ | `10.10.40.0/24` | Ayrı tutulan servis/test segmenti |
-| `em5` | SECURITY / KALI | `10.10.50.0/24` | Kontrollü test makinesi Kali |
-
-*Adresler özel RFC1918 laboratuvar örnekleridir; gerçek şirket veya internete açık sistemlerin topolojisini temsil etmez.*
-
-## 1. Ağ güvenliği ve OPNsense sıkılaştırması
-
-Ağ tasarımındaki temel hedef **her iç ağın birbirine sınırsız erişmemesi** idi. Domain'in gerektirdiği trafiğe izin verilerek servis sürekliliği korunurken diğer bölgelere erişim kurallarla sınırlandı.
-
-- **USERS → DC01:** DNS/AD erişimi, Kerberos ve gerekli SMB/RPC iletişimi için kurallar düzenlendi; domain'in çalışması test edildi. Tek tek güncel kural sırası ve port listesi yayımlanmadan önce OPNsense konfigürasyonuyla karşılaştırılmalıdır.
-- **USERS → DMZ / SECURITY:** Kısıtlamalar uygulandı; geçmiş laboratuvar testlerinde bu bölgelere erişim girişimlerinin başarısız olduğu gözlemlendi.
-- **USERS → internet:** Test edilen web erişimi devam ederken iç segment ayrımı korundu.
-- **Firewall görünürlüğü:** OPNsense `filterlog` kayıtlarındaki `PASS` / `BLOCK` kararları SOC'a ulaştı; örneğin WIN01 → DC01 UDP/123 ve SERVERS broadcast UDP/138 için `BLOCK` kayıtları gözlemlendi.
-- **DNS/DHCP operasyonu:** AD DNS ve GPO işleyişi test edildi; daha önce yaşanan DHCP servis/port çakışması giderildi. Bu çalışma güvenlik sınırlarının yanında altyapı sorunlarını çözmeyi de kapsıyordu.
-
-**Örnek başarılı kontroller:** WIN01 domain secure channel doğrulaması, `gpupdate`, DC01 SMB/445 erişimi ve internet/443 testi; DMZ ve SECURITY bölgesine beklenmedik istemci erişimi başarısızlığı. **Not:** `BLOCK` logu tek başına tüm segmentasyon politikasının eksiksiz olduğu anlamına gelmez.
-
-[Ağ segmentasyonu ve firewall çalışmaları](docs/OPNSENSE_SURICATA.md)
-
-## 2. Active Directory kurulumu ve güvenlik sıkılaştırması
-
-**Domain:** `corp.local` · **DC01:** Windows Server 2019 · **WIN01:** Windows 11 domain istemcisi.
-
-- `DC01` kurulup **AD DS domain controller** olarak yükseltildi; `WIN01` domaine katıldı ve domain hesabıyla oturum açma test edildi.
-- **OU/grup/kullanıcı organizasyonu** üzerinde çalışıldı. Önceki kontrolde `CORP-Users` içindeki **dokuz test hesabının `LogonWorkstations=WIN01`** kısıtı doğrulandı. Bu, hesapların oturum açabileceği bilgisayarları sınırlandırmayı amaçlar; tüm olası erişim vektörlerini engellediği iddia edilmez.
-- **`Workstation-Security-Policy` GPO** kapsamında Windows Defender Firewall'un **Domain, Private ve Public** profillerinin açık olması yapılandırıldı. Defender gerçek zamanlı korumasının kalıcı etkinlik durumu ayrıca teyit gerektirir.
-- **GPO güvenlik denetimi (Advanced Audit Policy):** Hesap ve grup yönetimi olaylarını gözlemleyebilmek için denetim üzerinde çalışıldı; 4720 (kullanıcı oluşturma), 4728 (gruba ekleme), 4738 (hesap değişikliği), 4724 (parola sıfırlama girişimi) ve 4726 (silme) olaylarını yakalamaya dönük SOC kuralları geliştirildi/test edildi. **4729 (gruptan çıkarma) doğrulaması** tamamlanmış kabul edilmemelidir.
-- **Kimlik doğrulama kanıtları:** Kerberos 4768/4769, başarısız doğrulama 4776, 4625/4771 ve NTLMv2/SMB oturum testleri incelendi. Test oturumlarında AES-256 Kerberos bileti ve NTLMv2 kullanımı gözlemlendi; bu bulgular domain genelinde eski protokollerin tamamen devre dışı olduğunu kanıtlamaz.
-- **Dosya paylaşımı yetkilendirmesi:** `Finance-Users` için NTFS izinleri incelendi; önceki testte kalıntı `BUILTIN\\Users` izni görüldüğü için erişim sıkılaştırması **tamamlandı** olarak işaretlenmedi. `5145` / `4656` **Access Denied** denetimi ve SACL/GPO kontrolleri sonraki doğrulama işidir.
-
-[AD kurulumu, GPO, hesap politikaları ve açık kalan doğrulamalar](docs/ACTIVE_DIRECTORY_SIKILASTIRMA.md)
-
-## 3. Suricata IDS/IPS, kural çalışmaları ve Kali testleri
-
-Suricata, OPNsense üzerinde test trafiğinin bir alarm sinyaline dönüştürülmesi için kullanıldı. ET Open/GPL kural çalışmaları ve laboratuvara özel test imzaları üzerinde çalışıldı.
-
-| Senaryo | Gözlenen durum | Yorum |
-|---|---|---|
-| Kali → DC01 ICMP | `GPL ICMP PING` (SID `2100384`) ve `GPL ICMP PING *NIX` (SID `2100366`) | **Doğrulandı**: 24 Ekim olaylarında iki imza aynı akışta görüldü |
-| Kali → Windows servisleri | `KALI SECURITY TEST` alarmları (ör. SMB/445, RDP/3389, Kerberos/88, DNS/53) | **Doğrulandı**: özel laboratuvar imzası SOC'a ulaştı |
-| OPNsense `filterlog` | `PASS` ve `BLOCK` telemetrisi | **Doğrulandı**: SOC kayıtları işlendi |
-| Suricata IPS engellemesi | IDS imzaları alarm üretti | **Ayrıca kanıt gerekiyor**: `action: allowed` bir paket engellemesi değildir |
-| Nmap/ET SCAN özel tespiti | Kural/algılama davranışı denendi | **Doğrulanmadı**: ICMP alarmı tek başına Nmap algılaması sayılmaz |
-
-Kali laboratuvarında TCP SYN/UDP, DNS A-NXDOMAIN, SMB, RDP, Kerberos, LDAP, ICMP ve çoklu tarama dahil **10 senaryonun telemetrisi** 10 Ekim testlerinde SOC'a ulaşmıştı. 24 Ekim'deki **32 testlik koşumun tamamı** için senaryo → benzersiz olay → tespit eşleşmesi hâlâ çıkarılmadı; "32/32 saldırı yakalandı" denmez.
-
-[Suricata, firewall logları ve test kanıtları](docs/OPNSENSE_SURICATA.md)
-
-## 4. Merkezi SOC: veri alımı, analiz ve dashboard
+## System at a glance
 
 ```mermaid
 flowchart LR
-    SRC["Firewall / Suricata / AD / Sysmon"] --> ING["Collector → /api/events/ingest"]
-    ING --> P["Normalizasyon / parser"]
-    P --> DB[("SQLite olay deposu")]
-    DB --> RULE["AD / Sysmon / Network / Incident motorları"]
-    RULE --> MITRE["MITRE ATT&CK bağlamı"]
-    MITRE --> DASH["SOC Dashboard / Investigation"]
-    RULE -. "opsiyonel yerel yorum" .-> AI["Ollama · Qwen3"]
-    AI -.-> DASH
+  subgraph LAB[Segmented lab]
+    W[WIN01 / USERS]
+    D[DC01 / SERVERS]
+    K[Kali / SECURITY]
+    F[OPNsense + Unbound]
+    S[Suricata]
+  end
+  W -->|Windows Security / Sysmon| A[Windows collectors]
+  D -->|AD Security / Sysmon| A
+  F -->|filterlog / DNS| C[Kali log collectors]
+  S -->|EVE JSON| C
+  A --> I[FastAPI ingest]
+  C --> I
+  I --> P[Normalize / timestamp / deduplicate]
+  P --> DB[(SQLite WAL)]
+  DB --> E[Network / AD / Sysmon / MITRE / Identity]
+  E --> UI[AEGIS dashboard]
+  E -.-> AI[Optional local Ollama]
 ```
 
-Bu, bileşenlerin **hedeflenen/önceki sürümlerde gözlenen işlevsel zinciridir**. MITRE worker zamanlaması, tüm korelasyonlar ve AI çalışabilirliği için son sürümde bağımsız test gereklidir.
+[LAB] Windows and network sensors are deployed on distinct VMs; the SOC API runs on the management workstation. [KOD] Event ingestion, normalization, SQLite retention and analysis are in the Python application. The firewall is responsible for policy enforcement; **AEGIS is not a firewall controller**.
 
-- **Log kaynakları:** OPNsense `filterlog`, Suricata JSON alert, DC01 Security/AD ve WIN01 Sysmon.
-- **Collector:** Kali'de rsyslog UDP/514 ve Python collector üzerinden firewall/IDS olaylarının `/api/events/ingest` akışına aktarılması geçmiş oturumlarda doğrulandı.
-- **SOC uygulaması:** Python, FastAPI, Pydantic, SQLite; `app/parser.py`, `app/storage.py`, `app/incident_engine.py` ve ilgili tespit modülleri.
-- **İnceleme ekranları:** Olay akışı, kaynak/önem seviyesi filtreleri, AD Intelligence, Sysmon Process Tree, Investigation Graph, korelasyon vakaları, rapor ve yerel AI bağlantıları için sürüm bazında kod/arayüz kanıtı var.
-- **MITRE V2:** 18 Ekim'de **21/21 birim testi**, tek seferlik worker koşumunda **176 Sysmon olayı / 25 tespit** raporlandı. Bu istatistikler bugünkü worker'ın sürekli çalıştığını kanıtlamaz.
+## What is implemented
 
-### 24 Ekim 2026 — örnek olay görünürlüğü
-
-`GET /api/events?limit=1000` sorgusundan alınan **son 1.000 kayıt**:
-
-| Kaynak | Kayıt |
-|---|---:|
-| Suricata | 725 |
-| Firewall | 230 |
-| Sysmon | 25 |
-| Active Directory | 20 |
-
-Bu sayılar **toplam proje alarm sayısı veya 32 testteki başarı oranı değildir**; yalnızca sorgunun getirdiği 1.000 kayıtlık kesittir.
-
-### Ana teknolojiler
-
-`OPNsense` · `Suricata IDS` · `Windows Server 2019` · `Active Directory Domain Services` · `Group Policy (GPO)` · `Windows 11` · `Sysmon` · `Kali Linux` · `Python` · `FastAPI` · `SQLite` · `PowerShell` · `MITRE ATT&CK` · `Ollama / Qwen3` · `HTML / CSS / JavaScript`
-
-## Test ve doğrulama özeti
-
-| Kontrol | Durum | Kanıt / sınır |
-|---|---|---|
-| DC01 domain kurulumu + WIN01 domain join | **Doğrulandı** | Domain hesabıyla oturum, secure channel, GPO güncelleme |
-| USERS ↔ gerekli AD servisleri | **Doğrulandı (laboratuvar senaryosu)** | DNS, SMB, domain iletişimi |
-| USERS → DMZ ve SECURITY sınırı | **Doğrulandı (test edilen erişimler)** | İlgili bağlantı denemeleri engellendi |
-| OPNsense PASS/BLOCK → SOC | **Doğrulandı** | Firewall olay kayıtları |
-| Suricata özel/ICMP alarmı → SOC | **Doğrulandı** | İmza, source/destination, flow_id |
-| WIN01 Sysmon → SOC | **Doğrulandı** | Event 1/3/22 örnekleri; süreklilik ayrıca izlenmeli |
-| DC01 kimlik doğrulama → SOC | **Doğrulandı** | 4776 ve Kerberos olayları |
-| 9 AD hesabının WIN01 iş istasyonu kısıtı | **Doğrulandı (hesap özellikleri)** | `LogonWorkstations` denetimi |
-| AD 4729 gruptan çıkarma kuralı | **Doğrulama bekliyor** | Uçtan uca test kaydı yok |
-| SMB dosya erişimi 5145/4656 Access Denied | **Doğrulama bekliyor** | Audit + SACL/ACL bütünlüğü gerekir |
-| Suricata IPS ile gerçek engelleme | **Doğrulama bekliyor** | Mevcut IDS alarmları tek başına kanıt değil |
-| 32/32 Kali testi: tespit eşleşmesi | **Doğrulama bekliyor** | Test betiği / senaryo bazlı kanıt eşlemesi eksik |
-
-## Depo yapısı ve dokümantasyon
-
-Bu GitHub deposu şu aşamada **dokümantasyon ve proje envanteri** içermektedir. Gerçek kod, yapılandırma dosyaları ve ekran görüntüleri güvenlik incelemesinden sonra eklenecektir. Kaynak kod varmış gibi kurulum garantisi verilmez.
-
-| Doküman | İçerik |
+| Area | Capability and evidence |
 |---|---|
-| [Laboratuvar kurulumu ve güvenlik çalışmaları](docs/LAB_KURULUMU_VE_SIKILASTIRMA.md) | Ağ + domain + uç nokta + SOC'un kronolojik kurulumu |
-| [OPNsense / Suricata ayrıntıları](docs/OPNSENSE_SURICATA.md) | Segmentasyon, firewall kararları, IDS kuralları ve testler |
-| [Active Directory güvenliği](docs/ACTIVE_DIRECTORY_SIKILASTIRMA.md) | Domain join, OU/hesap kısıtları, GPO, denetim ve ACL |
-| [Mimari](docs/MIMARI.md) | Modüller ve veri akışları |
-| [API referansı](docs/API_REFERANSI.md) | FastAPI endpoint'leri ve doğrulama sınırları |
-| [Detection Engineering](docs/DETECTION_ENGINEERING.md) | Tespit mantığı, kanıt ve false-positive değerlendirmesi |
-| [Testler](docs/TESTLER.md) | 10/32 test senaryoları, V2 ve örnek telemetri |
-| [Proje durumu](docs/PROJE_DURUMU.md) | Doğrulanan, eksik ve planlanan bileşenler |
-| [Yayın güvenliği](docs/GUVENLIK.md) | GitHub'a çıkmadan önce güvenlik kontrol listesi |
+| **Network investigations** | [KOD] Source-aware event parsing, five-minute vertical and horizontal scan candidates, noise suppression, firewall / Suricata evidence, incident risk and confidence context. |
+| **Firewall intelligence** | [LAB] OPNsense policy blocks were observed on SECURITY/em5; [KOD] threat-intelligence-labelled blocks are not assumed from action alone—the rule identifier must match an approved record. |
+| **DNS intelligence** | [LAB] Unbound query monitoring, DNS test traffic and blocklist operation; [KOD] NXDOMAIN bursts are not counted as confirmed blocklist decisions. |
+| **Active Directory** | [KOD] Windows Security event analysis, account / group changes, Kerberos-related patterns, privileged activity, and User 360 context. |
+| **Endpoint & Sysmon** | [KOD] 11 conservative primary detection rules covering process, DNS, network, autorun, LSASS-targeting and tampering indicators. [LAB] Eight distinct rules produced observable real WIN01-to-SOC lab alerts. |
+| **ATT&CK** | [KOD] Rule-to-technique mapping and a separate MITRE analysis module; [LAB] V2 validation was performed in the lab. |
+| **Identity intelligence** | [KOD] Inventory and privilege sidecars, user / group / nested membership relationships, risk context and behavior timeline. |
+| **Local AI** | [KOD] Optional Ollama-based explanation with evidence-conscious prompts; [LAB] the configured model was `qwen3:4b-instruct`. |
 
-## Sonraki işler
+![Sysmon panel](docs/screenshots/sysmon-endpoint-overview.png)
 
-- Tam OPNsense kural export'u ile **kural sırasını ve segmentasyonun kapsamını** belgeleme (gizli ayarları temizleyerek).
-- AD **5145/4656 Access Denied** kayıtlarını, GPO Audit Detailed File Share/File System ve gerekiyorsa SACL ile uçtan uca doğrulama; `Finance-Users` izinlerindeki kalıntı geniş yetkileri giderip yeniden test etme.
-- AD **4729** ve başarısız giriş / brute-force korelasyonu dahil kuralları yeniden sınama.
-- Suricata **IDS alarmı** ile gerçek **IPS bloklama** sonuçlarını ayrı ölçme; ağ taraması imzalarını senaryo bazında doğrulama.
-- **32 kontrollü Kali testinin** her biri için event, flow, signature, MITRE ve sonuç matrisi hazırlama.
-- Gizli bilgileri temizlenmiş **gerçek ekran görüntülerini**, uygulama kodunu ve otomatik testleri depoya ekleme.
+![Identity Intelligence](docs/screenshots/identity-ad-intelligence.png)
 
-## Güvenlik ve kapsam
+## Lab topology
 
-Bu proje **izole/yetkili laboratuvar** üzerinde hazırlanmıştır. Gerçek IP'ler, kullanıcı kimlikleri, parola/token dosyaları, tam AD export'ları, SQLite olay veritabanları, ham güvenlik logları ve yedekler açık repoya yüklenmemelidir. Yayımlanan örnekler yalnızca test ortamını temsil eder. Lisans seçimi proje sahibine bırakılmıştır.
+| Segment | Interface | Network | Known systems / purpose |
+|---|---|---|---|
+| USERS | [LAB] `em2` | [LAB] `10.10.20.0/24` | [LAB] WIN01 reported as `.100` and `.101` in different records; confirm current lease before reproducing |
+| SERVERS | [LAB] `em3` | [LAB] `10.10.30.0/24` | [LAB] DC01: `10.10.30.10`, Windows Server 2019, `corp.local` |
+| DMZ | [LAB] `em4` | [LAB] `10.10.40.0/24` | [LAB] Logical segment configured; no additional DMZ server deployed in the final lab |
+| SECURITY | [LAB] `em5` | [LAB] `10.10.50.0/24`* | [LAB] OPNsense `.1`, Kali `.100` |
+| Management / SOC | [LAB] separate workstation network | [LAB] `192.168.1.x` | [LAB] SOC host `192.168.1.111:8088` |
 
-**Geliştirme odağı:** *Ağı segmentlere ayırmak → Active Directory'yi güvenli kurmak → görünürlüğü sağlamak → saldırı simülasyonlarıyla doğrulamak → merkezi SOC'ta kanıta dayalı tespit üretmek.*
+\* [LAB] SECURITY prefix is consistent with the reported address plan; the interface's current mask should be reconfirmed before recreating the lab. WAN adapter placement and the complete rule inventory are not stated as facts without a configuration export.
+
+![Network overview](docs/screenshots/network-lab-topology.png)
+
+## Five-minute quick start (existing lab or local review)
+
+[KOD] The backend uses FastAPI/Uvicorn, Pydantic and SQLite; the HTML dashboard is served by `app/templates/index.html`. [LAB] The original lab ran on Windows with Python 3.14. These commands are for **a clone containing the actual application code**, not for a documentation-only ZIP. Secrets must be provided locally, never committed.
+
+```powershell
+# On your own lab workstation, from the repository root:
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# Optional: protect the dashboard and ingest API with your own local secrets.
+# $env:SOC_DASHBOARD_USER = '<local-user>'
+# $env:SOC_DASHBOARD_PASSWORD = '<set-locally>'
+# $env:SOC_INGEST_TOKEN = '<set-locally>'
+
+$env:AEGIS_MITRE_V2 = '1'
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8088
+```
+
+[KOD] Open `http://127.0.0.1:8088/` and query `http://127.0.0.1:8088/api/status`. [LAB] For the networked lab the backend was bound to the trusted management workstation address; **do not expose this laboratory service to the public Internet**. Collectors need their own approved connectivity and, when enabled, `X-SOC-Token`.
+
+### Minimum verification
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8088/api/status
+Invoke-RestMethod 'http://127.0.0.1:8088/api/events?mode=all&limit=10'
+Invoke-RestMethod http://127.0.0.1:8088/api/source-health
+```
+
+[KOD] `/api/events` supports `source`, `mode`, `limit`, `offset`, and timezone-aware time filters. These checks show service responses, **not proof that every source is currently sending new events**. Use the event timestamps and source health view before declaring an end-to-end success. See [Data flow](docs/data-flow.md).
+
+## Validation: actions and expected evidence
+
+| Lab action | Expected evidence | Outcome / qualification |
+|---|---|---|
+| Kali Nmap against approved DC01 lab ports | [LAB] Suricata EVE alerts and OPNsense filterlog; [KOD] potential scan finding | [LAB] Traffic, signatures and logs were observed; findings indicate candidates, not proven compromise |
+| Kali → `198.51.100.77` (RFC 5737 TEST-NET-2) | [LAB] SECURITY `em5`, ingress, TCP/ICMP `BLOCK` | [LAB] Verified against OPNsense Live View; [KOD] SOC uses PF rule-ID mapping for TI attribution |
+| Test DNS queries and synthetic `.invalid` names | [LAB] Unbound queries; [KOD] separate NXDOMAIN analysis | [LAB] Query events observed; **blocklist decision field is not currently forwarded** |
+| WIN01: encoded PowerShell, script host, Office-named test process | [KOD] Sysmon Event 1 rules | [LAB] Corresponding dashboard detections observed; Office-named process was a lab simulation, not an Office exploit |
+| WIN01: Startup file and Registry Run test | [KOD] Sysmon Event 11 / 13 rules | [LAB] Both generated dashboard alerts |
+| WIN01: `.invalid` query and unusual external port | [KOD] Sysmon Event 22 / 3 | [LAB] Both generated dashboard alerts |
+| Event 8 / 10 / 25 (LSASS / tampering) | [KOD] Detection rules and unit-test coverage | [LAB] Collection configuration prepared; **live malicious-behavior validation was not performed** |
+
+![Firewall evidence](docs/screenshots/opnsense-firewall-liveview.png)
+
+## Security and evidence boundaries
+
+- [KOD] AEGIS is a **read-only detection and analysis application**; actual allow/block decisions are made by OPNsense rules, independently of the SOC dashboard.
+- [KOD] Optional HTTP Basic Auth protects analyst endpoints; optional `X-SOC-Token` protects ingestion. Neither replaces TLS, network isolation or production identity management.
+- [KOD] Event fingerprints use SHA-256; SQLite uses WAL; default event retention is bounded to 50,000 records. These mechanisms do not constitute tamper-proof forensic storage.
+- [KOD] Identity/privilege API isolation is designed around loopback restrictions. [LAB] Local-only mode and separate identity data isolation were exercised in lab tests.
+- [LAB] Examples, test subjects and RFC 5737 addresses are used only in an authorized laboratory. Sensitive local paths, credentials and real organization data must not be published.
+
+## Known limitations
+
+1. [KOD] **Confirmed Unbound blocklist decisions are not exposed in SOC counts** because the existing DNS collector does not forward the required Unbound decision field; NXDOMAIN alone is not a confirmed block.
+2. [LAB] The DMZ has no deployed endpoint; this is not an unmonitored production enclave.
+3. [LAB] The current complete OPNsense policy export, versions, exact feed URLs / schedules, and complete Sysmon configuration provenance have not been supplied for independent reproduction.
+4. [LAB] The repository snapshot used to prepare these docs was supplied separately; the public repository endpoint was not independently readable during documentation preparation. Re-check installed dependencies and current branch before publishing.
+5. [LAB] Sysmon LSASS-targeting and process-tampering live alerts were left untriggered to avoid weakening endpoint protection; successful unit tests are not a substitute for live attack validation.
+
+## Documentation
+
+| Guide | Contents |
+|---|---|
+| [Architecture](docs/architecture.md) | Logical/physical design, identity model, trust boundaries |
+| [OPNsense setup](docs/opnsense-setup.md) | Segments, remote syslog, firewall and Suricata evidence |
+| [Active Directory setup](docs/active-directory-setup.md) | DC01, OUs, audit events, GPO/Sysmon validation |
+| [IP and DNS blocklists](docs/blocklists.md) | PF rule verification, Unbound and decision-path limitations |
+| [Detections](docs/detections.md) | Rule catalog, thresholds, ATT&CK, validation status |
+| [Data flow](docs/data-flow.md) | Ingest contract, timestamps, storage, threat attribution |
+| [Screenshots](docs/screenshots/README.md) | Curated evidence gallery and publication checklist |
+| [Publication checklist](docs/publication-checklist.md) | GitHub safety checks, dependencies, verified vs TODO details |
+
+## Roadmap and project status
+
+[LAB] **Project milestone: completed as a working educational SOC lab and portfolio case study.** The roadmap below captures **optional future improvements**, not claims that present features are missing: source-verifiable DNS block decision forwarding; exportable versioned infrastructure snapshots; replayable lab fixtures; and deeper controlled testing of the three high-impact Sysmon detections.
+
+## License, credits and provenance
+
+[LAB] Lab integration and dashboard work are original portfolio work assembled using Active Directory, OPNsense, Suricata, Sysmon and FastAPI. [KOD] Detailed algorithmic claims were checked against the available Python source snapshots; [LAB] operational behavior and screenshots originate from reported lab observations. `LICENSE`: **<!-- TODO: verify the actual license file before stating a license -->**. Product names and logos remain the property of their respective owners.
+
+**Legend:** `[KOD]` = verified in supplied code snapshot; `[LAB]` = reported or demonstrated in the laboratory. Neither tag alone implies independent production certification.
+
+### Outstanding evidence for exact reproduction
+
+<!-- TODO: provide OPNsense release, current WAN mapping and exact interface netmasks -->
+<!-- TODO: provide exported firewall rule table, Suricata mode/ruleset and feed update schedule -->
+<!-- TODO: provide DHCP/DNS service export, complete GPO inventory and Sysmon XML provenance -->
+<!-- TODO: confirm repository LICENSE, requirements.txt and current default Git branch -->
