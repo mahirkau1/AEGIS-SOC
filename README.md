@@ -405,7 +405,7 @@ Bir MITRE tekniğinin eşlenmesi, saldırının mutlaka gerçekleştiği anlamı
 
 [LAB] Yapılan envanter dışa aktarma ve import regresyonunda örnek doğrulama çıktısı **20 kullanıcı, 57 grup**, doğrudan ve iç içe üyeliklerdi. Bunlar canlı sistemde değişebilecek bir anlık laboratuvar kaydıdır; repo indirilince aynı sayının çıkacağı garanti edilmez.
 
-| AD Intelligence ana ekranı | Identity kullanıcı listesi |
+| AD Intelligence ana ekranı | Identity kullanıcı Olay Akış Şeması |
 |---|---|
 | ![Identity AD Intelligence](images/identity-ad-intelligence.png) | ![Identity kullanıcı listesi](images/identity-users-list.png) |
 
