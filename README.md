@@ -409,7 +409,7 @@ Bir MITRE tekniğinin eşlenmesi, saldırının mutlaka gerçekleştiği anlamı
 |---|---|
 | ![Identity AD Intelligence](images/identity-ad-intelligence.png) | ![Identity kullanıcı listesi](images/identity-users-list.png) |
 
-| Kimlik güvenlik çalışma alanı | Yetki üyelikleri |
+| Kimlik güvenlik AI Analiz Ekranı | Yetki üyelikleri |
 |---|---|
 | ![Identity Security Intelligence](images/identity-security-intelligence.png) | ![Identity privilege memberships](images/identity-privilege-memberships.png) |
 
