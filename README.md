@@ -413,13 +413,7 @@ Bir MITRE tekniğinin eşlenmesi, saldırının mutlaka gerçekleştiği anlamı
 |---|---|
 | ![Identity Security Intelligence](images/identity-security-intelligence.png) | ![Identity privilege memberships](images/identity-privilege-memberships.png) |
 
-| User 360 profili | Risk değerlendirmesi |
-|---|---|
-| ![Identity User360 profili](images/identity-user360-profile.png) | ![Identity risk analizi](images/identity-user360-risk-analysis.png) |
 
-| Kullanıcı özeti | Kimlik olay ayrıntısı |
-|---|---|
-| ![SOC Identity kullanıcı özeti](images/soc-identity-user360-summary.png) | ![SOC Identity ayrıntıları](images/soc-identity-details.png) |
 
 ### Kimlik merkezli incelemenin amacı
 
