@@ -294,7 +294,7 @@ SOC tarafında aynı iki katman ayrı kartlarda gösterilir. **Ekranda DNS BLOCK
 
 ### 3.4. Suricata IDS
 
-[LAB] Suricata ayarlar ekranında **IDS modunda** (PCAP live) görünüyor ve yalnızca **SECURITY** ve **USERS** arayüzlerini izliyor. Uyarılar syslog'a ve EVE biçiminde gönderiliyor, log haftalık döndürülüyor ve 4 dosya saklanıyor. IDS modunda olduğu için trafiği engellemez; `allowed` işareti firewall PASS anlamına gelmez.
+[LAB] Suricata ayarlar ekranında **IDS modunda** (PCAP live) görünüyor ve yalnızca **SECURITY** , **USERS** ve **SERVER** arayüzlerini izliyor. Uyarılar syslog'a ve EVE biçiminde gönderiliyor, log haftalık döndürülüyor ve 4 dosya saklanıyor. IDS modunda olduğu için trafiği engellemez; `allowed` işareti firewall PASS anlamına gelmez.
 
 <table>
   <tr>
