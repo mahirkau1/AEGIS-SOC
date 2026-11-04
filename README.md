@@ -684,23 +684,17 @@ HTTP 200 yalnızca API'nin cevap verdiğini gösterir; bir kaynağın gerçekten
 
 ## 11. Güvenlik, kapsam ve bilinen sınırlar
 
-**Veri ve erişim güvenliği**
-
-- Parola, token, özel anahtar, veritabanı yedeği ve kullanıcı dizinleri depoya eklenmez (`.gitignore` bunları dışlar).
-- Dashboard kimlik doğrulaması ve ingest token denetimi, ilgili ortam değişkenleri tanımlanmadığında zorunlu değildir; projeyi internete doğrudan açmayın.
-- Güvenlik ürünleri kapatılarak test başarısı zorlanmadı.
 
 **Teknik sınırlar**
 
 - AEGIS pasif analiz yapar; engelleme OPNsense ve Windows politikalarındadır.
 - Dashboard sayıları yüklenen örnekleme aittir (ör. son 500 AD olayı, son 5.000 Sysmon kaydı); tüm veritabanını temsil etmez.
-- Suricata IDS modunda çalışır ve yalnızca SECURITY ve USERS arayüzlerini izler.
+- Suricata IDS modunda çalışır ve yalnızca SECURITY , USERS VE SERVER arayüzlerini izler.
 - NXDOMAIN yanıtı tek başına blocklist engeli sayılmaz; NXDOMAIN, karar alanı veya bağımsız doğrulama olmadan kesin blocklist engeli sayılmaz; collector kapsamı dikkate alınır.
 - Sysmon ID 8, 10 ve 25 kuralları için canlı kötü amaçlı davranış testi tamamlanmadı; izleme ve birim testleri ayrıdır.
 - Kali ve Windows collector kaynakları (`collector.py`, `aegis-collector.service`, `aegis-dns-reader`, Windows görevleri) bu depoda yer almaz; veri akışı bu belgede açıklanmıştır.
 - Firewall politika matrisi kural listesinden türetilmiştir; her hücre ayrıca test edilmemiştir.
 
-**Kod kontrolü.** Yayımlanan kod, hassas bilgi kalıpları, beklenmeyen dış ağ uçları ve eski yedek kopyalar açısından statik olarak taranmış ve gömülü gerçek API anahtarı veya özel anahtar bulunmamıştır. Bu, tüm güvenlik açıklarının bulunduğu anlamına gelmez; internete açık bir dağıtım için ayrı inceleme gerekir. Birim testleri üretim ortamının uçtan uca testi değildir.
 
 ---
 
